@@ -1,0 +1,693 @@
+openapi: "3.0.0"
+info:
+  title: "Hackyeah jak doczlapie"
+  version: "1.0.0"
+  description: ""
+components:
+  responses:
+    Forbidden:
+      description: "Access token is missing or invalid"
+    Accepted:
+      description: "The request was accepted"
+    Created:
+      description: "The resource has been created"
+    NotFound:
+      description: "The resource has been created"
+    NotAcceptable:
+      description: "The resource has been created"
+  securitySchemes:
+    BearerAuth:
+      type: "http"
+      scheme: "bearer"
+    BasicAuth:
+      type: "http"
+      scheme: "basic"
+    ApiKeyAuth:
+      type: "apiKey"
+      in: "header"
+      name: "X-API-Key"
+  schemas:
+    Any:
+      description: "Any JSON object not defined as schema"
+    PaginationMeta:
+      type: "object"
+      properties:
+        total:
+          type: "number"
+          example: 100
+          nullable: false
+        page:
+          type: "number"
+          example: 2
+          nullable: false
+        perPage:
+          type: "number"
+          example: 10
+          nullable: false
+        currentPage:
+          type: "number"
+          example: 3
+          nullable: false
+        lastPage:
+          type: "number"
+          example: 10
+          nullable: false
+        firstPage:
+          type: "number"
+          example: 1
+          nullable: false
+        lastPageUrl:
+          type: "string"
+          example: "/?page=10"
+          nullable: false
+        firstPageUrl:
+          type: "string"
+          example: "/?page=1"
+          nullable: false
+        nextPageUrl:
+          type: "string"
+          example: "/?page=6"
+          nullable: false
+        previousPageUrl:
+          type: "string"
+          example: "/?page=5"
+          nullable: false
+    Condition:
+      type: "object"
+      required: []
+      properties:
+        id:
+          type: "number"
+          example: 635
+        name:
+          type: "string"
+          example: "John Doe"
+        description:
+          type: "string"
+          example: "Lorem ipsum dolor sit amet"
+        created_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+        updated_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+      description: "Condition (Model)"
+    Route:
+      type: "object"
+      required: []
+      properties:
+        id:
+          type: "number"
+          example: 666
+        name:
+          type: "string"
+          example: "John Doe"
+        operator:
+          type: "string"
+          example: "Lorem Ipsum"
+        type:
+          $ref: '#/components/schemas/"bus"'
+          example: null
+        stops:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Stop"
+            example: null
+        route_stops:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/RouteStop"
+            example: null
+        schedules:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Schedule"
+            example: null
+        created_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+        updated_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+      description: "Route (Model)"
+    RouteStop:
+      type: "object"
+      required: []
+      properties:
+        id:
+          type: "number"
+          example: 186
+        route_id:
+          type: "number"
+          example: 438
+        stop_id:
+          type: "number"
+          example: 752
+        route:
+          $ref: "#/components/schemas/Route"
+          example: null
+        stop:
+          $ref: "#/components/schemas/Stop"
+          example: null
+        schedules:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Schedule"
+            example: null
+      description: "RouteStop (Model)"
+    Schedule:
+      type: "object"
+      required: []
+      properties:
+        id:
+          type: "number"
+          example: 420
+        time:
+          type: "string"
+          example: "Lorem Ipsum"
+        destination:
+          type: "string"
+          example: "Lorem Ipsum"
+        conditions:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Condition"
+            example: null
+        route_stop_id:
+          type: "number"
+          example: 856
+        run:
+          type: "number"
+          example: 121
+        route_stop:
+          $ref: "#/components/schemas/RouteStop"
+          example: null
+        created_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+        updated_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+      description: "Schedule (Model)"
+    Stop:
+      type: "object"
+      required: []
+      properties:
+        id:
+          type: "number"
+          example: 233
+        name:
+          type: "string"
+          example: "John Doe"
+        schedules:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Schedule"
+            example: null
+        location:
+          $ref: "#/components/schemas/GeoJSONPoint"
+          example: null
+        type:
+          $ref: '#/components/schemas/"bus"'
+          example: null
+        routes:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Route"
+            example: null
+        created_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+        updated_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+      description: "Stop (Model)"
+    Track:
+      type: "object"
+      required: []
+      properties:
+        id:
+          type: "number"
+          example: 584
+        created_at:
+          type: "string"
+          example: "2021-03-23T16:13:08.489+01:00"
+          format: "date-time"
+        route_id:
+          type: "number"
+          example: 756
+        run:
+          type: "number"
+          example: 541
+        location:
+          $ref: "#/components/schemas/GeoJSONPoint"
+          example: null
+        route:
+          $ref: "#/components/schemas/Route"
+          example: null
+      description: "Track (Model)"
+    findRouteValidator:
+      type: "object"
+      properties:
+        fromLatitude:
+          type: "number"
+          example: -90
+          minimum: -90
+          maximum: 90
+          required: true
+        fromLongitude:
+          type: "number"
+          example: -180
+          minimum: -180
+          maximum: 180
+          required: true
+        toLatitude:
+          type: "number"
+          example: -90
+          minimum: -90
+          maximum: 90
+          required: true
+        toLongitude:
+          type: "number"
+          example: -180
+          minimum: -180
+          maximum: 180
+          required: true
+        radius:
+          type: "number"
+          example: 918
+      example:
+        fromLatitude: -90
+        fromLongitude: -180
+        toLatitude: -90
+        toLongitude: -180
+        radius: 918
+      description: "findRouteValidator (Validator)"
+    nearbyRouteValidator:
+      type: "object"
+      properties:
+        latitude:
+          type: "number"
+          example: -90
+          minimum: -90
+          maximum: 90
+          required: true
+        longitude:
+          type: "number"
+          example: -180
+          minimum: -180
+          maximum: 180
+          required: true
+        radius:
+          type: "number"
+          example: 261
+      example:
+        latitude: -90
+        longitude: -180
+        radius: 261
+      description: "nearbyRouteValidator (Validator)"
+    storeTrackingValidator:
+      type: "object"
+      properties:
+        coordinates:
+          type: "object"
+          properties:
+            latitude:
+              type: "number"
+              example: -90
+              minimum: -90
+              maximum: 90
+              required: true
+            longitude:
+              type: "number"
+              example: -180
+              minimum: -180
+              maximum: 180
+              required: true
+          required: true
+        run:
+          type: "number"
+          example: 1
+          minimum: 1
+          required: true
+      example:
+        coordinates:
+          latitude: -90
+          longitude: -180
+        run: 1
+      description: "storeTrackingValidator (Validator)"
+paths:
+  /api/v1/routes:
+    get:
+      summary: "Routes - Get routes based on start and end locations (index)"
+      description: "Returns **200** (OK) as **application/json**\n\n _app/controllers/routes_controller.ts_ - **index**"
+      parameters:
+        - in: "query"
+          name: " fromLatitude"
+          description: "(Optional) Filter schedules by starting latitude"
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: " fromLongitude"
+          description: "(Optional) Filter schedules by starting longitude"
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: " toLatitude"
+          description: "(Optional) Filter schedules by destination latitude"
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: " toLongitude"
+          description: "(Optional) Filter schedules by destination longitude"
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: "radius"
+          description: "(Optional) in meters, default is 1000"
+          schema:
+            example: null
+            type: "string"
+          required: false
+      tags:
+        - "ROUTES"
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: "array"
+                items:
+                  type: "object"
+              example:
+                - id: 1
+                  name: "PKS Krapkowice Gogolin"
+                  operator: "PKS w Strzelcach Op. S.A."
+                  departure_stop:
+                    id: 5
+                    name: "Krapkowice ul. Opolska I"
+                    time: "12:28:00"
+                    distance: 789
+                    coordinates:
+                      longitude: 17.962
+                      latitude: 50.478
+                  arrival_stop:
+                    id: 14
+                    name: "Gogolin ul. Krapkowicka I"
+                    time: "12:47:00"
+                    distance: 929
+                    coordinates:
+                      longitude: 18.013
+                      latitude: 50.489
+                  run: 3
+                  destination: "KRAPKOWICE OS. 1000L"
+                  travel_time: 19
+                  conditions:
+                    - name: "6x"
+                      description: "Kursuje w soboty powszednie oprócz Wielkiej Soboty"
+          description: "Returns **200** (OK) as **application/json**"
+      security: []
+  /api/v1/routes/{id}:
+    get:
+      summary: "Routes - Get route details (show)"
+      description: "Returns **200** (OK) as **application/json**\n\n _app/controllers/routes_controller.ts_ - **show**"
+      parameters:
+        - in: "path"
+          name: "id"
+          description: "The ID of the route to retrieve @example(1)"
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: "destination"
+          description: "(Optional) Filter schedules by destination"
+          schema:
+            example: null
+            type: "string"
+          required: false
+      tags:
+        - "ROUTES"
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  id: 2
+                  name: "LUZ Krapkowice Strzelce Opolskie"
+                  type: "bus"
+                  operator: "LUZ"
+                  destinations:
+                    type: "object"
+                    properties:
+                      0: "KRAPKOWICE"
+                      1: "STRZELCE OPOLSKIE"
+                  stops:
+                    type: "object"
+                    properties:
+                      0:
+                        type: "object"
+                        properties:
+                          id: 17
+                          name: "KRAPKOWICE ul. Prudnicka"
+                          type: "bus"
+                          coordinates:
+                            type: "object"
+                            properties:
+                              longitude: 17.965
+                              latitude: 50.471
+                          schedules:
+                            type: "object"
+                            properties:
+                              0:
+                                type: "object"
+                                properties:
+                                  id: 663
+                                  time: "06:30:00"
+                                  destination: "KRAPKOWICE"
+                                  run: 1
+                                  conditions:
+                                    type: "object"
+                                    properties:
+                                      0:
+                                        type: "object"
+                                        properties:
+                                          id: 1
+                                          name: "D"
+                                          description: "Kursuje od poniedziałku do piątku oprócz świąt"
+                              1:
+                                type: "object"
+                                properties:
+                                  id: 423
+                                  time: "06:50:00"
+                                  destination: "STRZELCE OPOLSKIE"
+                                  run: 1
+                                  conditions:
+                                    type: "object"
+                                    properties:
+                                      0:
+                                        type: "object"
+                                        properties:
+                                          id: 1
+                                          name: "D"
+                                          description: "Kursuje od poniedziałku do piątku oprócz świąt"
+              example:
+                id: 2
+                name: "LUZ Krapkowice Strzelce Opolskie"
+                type: "bus"
+                operator: "LUZ"
+                destinations:
+                  - "KRAPKOWICE"
+                  - "STRZELCE OPOLSKIE"
+                stops:
+                  - id: 17
+                    name: "KRAPKOWICE ul. Prudnicka"
+                    type: "bus"
+                    coordinates:
+                      longitude: 17.965
+                      latitude: 50.471
+                    schedules:
+                      - id: 663
+                        time: "06:30:00"
+                        destination: "KRAPKOWICE"
+                        run: 1
+                        conditions:
+                          - id: 1
+                            name: "D"
+                            description: "Kursuje od poniedziałku do piątku oprócz świąt"
+                      - id: 423
+                        time: "06:50:00"
+                        destination: "STRZELCE OPOLSKIE"
+                        run: 1
+                        conditions:
+                          - id: 1
+                            name: "D"
+                            description: "Kursuje od poniedziałku do piątku oprócz świąt"
+          description: "Returns **200** (OK) as **application/json**"
+      security: []
+  /api/v1/stops:
+    get:
+      summary: "Stops - Get all nearby stops (index)"
+      description: "Returns **200** (OK) as **application/json**\n\n _app/controllers/stops_controller.ts_ - **index**"
+      parameters:
+        - in: "query"
+          name: "longitude"
+          description: ""
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: "latitude"
+          description: ""
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: "radius"
+          description: "(Optional) in meters"
+          schema:
+            example: null
+            type: "string"
+          required: false
+      tags:
+        - "STOPS"
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  id: 17
+                  type: "bus"
+                  name: "KRAPKOWICE | ul. Prudnicka"
+                  routes:
+                    type: "object"
+                    properties:
+                      0:
+                        type: "object"
+                        properties:
+                          id: 2
+                          name: "LUZ Krapkowice Strzelce Opolskie"
+                          operator: "LUZ"
+                  coordinates:
+                    type: "object"
+                    properties:
+                      longitude: 17.965
+                      latitude: 50.471
+                  distance: 355
+              example:
+                id: 17
+                type: "bus"
+                name: "KRAPKOWICE | ul. Prudnicka"
+                routes:
+                  - id: 2
+                    name: "LUZ Krapkowice Strzelce Opolskie"
+                    operator: "LUZ"
+                coordinates:
+                  longitude: 17.965
+                  latitude: 50.471
+                distance: 355
+          description: "Returns **200** (OK) as **application/json**"
+      security: []
+  /api/v1/stops/{id}:
+    get:
+      summary: "Stops - Get stop details (show)"
+      description: "Returns **200** (OK) as **text/plain**\n\n _app/controllers/stops_controller.ts_ - **show**"
+      parameters:
+        - in: "path"
+          name: "id"
+          description: "The ID of the stop to retrieve @example(1)"
+          schema:
+            example: null
+            type: "string"
+          required: false
+      tags:
+        - "STOPS"
+      responses:
+        200:
+          content:
+            text/plain:
+              example: '{"id": 17,"name":"KRAPKOWICE | ul. Prudnicka", "type":"bus","coordinates": {"longitude": 17.965,"latitude": 50.471  },"routes": [{"name": "LUZ Krapkowice Strzelce Opolskie", "type":"bus","id": 2,"operator": "LUZ","destinations": ["KRAPKOWICE","STRZELCE OPOLSKIE"],"schedules": [{"id": 663,"time": "06:30:00","destination": "KRAPKOWICE","run": 1,"conditions": [{"name": "D","description": "Kursuje od poniedziałku do piątku oprócz świąt","id": 1}]}},{"id": 423,"time": "06:50:00","destination": "STRZELCE OPOLSKIE","run": 1,"conditions": [{"name": "D","description": "Kursuje od poniedziałku do piątku oprócz świąt","id": 1}]}]}]}'
+          description: "Returns **200** (OK) as **text/plain**"
+      security: []
+  /api/v1/routes/{id}/tracks:
+    post:
+      summary: "Trackings - Store user tracking data (store)"
+      description: "\n\n _app/controllers/tracks_controller.ts_ - **store**"
+      parameters:
+        - in: "path"
+          name: "id"
+          description: "The ID of the route to track @example(1)"
+          schema:
+            example: null
+            type: "string"
+          required: false
+      tags:
+        - "TRACKS"
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Track"
+              example:
+                id: 584
+                created_at: "2021-03-23T16:13:08.489+01:00"
+                route_id: 756
+                run: 541
+          description: "Returns **200** (OK) as **application/json**"
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/storeTrackingValidator"
+            example:
+              coordinates:
+                latitude: -90
+                longitude: -180
+              run: 1
+  /:
+    get:
+      summary: "route"
+      description: "\n\n __ - ****"
+      parameters: []
+      tags: []
+      responses:
+        200:
+          description: "OK"
+          content:
+            application/json: {}
+      security: []
+tags:
+  - name: "ROUTES"
+    description: "Everything related to ROUTES"
+  - name: "ROUTES"
+    description: "Everything related to ROUTES"
+  - name: "STOPS"
+    description: "Everything related to STOPS"
+  - name: "STOPS"
+    description: "Everything related to STOPS"
+  - name: "TRACKS"
+    description: "Everything related to TRACKS"
