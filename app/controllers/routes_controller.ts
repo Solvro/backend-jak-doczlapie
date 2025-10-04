@@ -25,15 +25,18 @@ export default class RoutesController {
    * @paramQuery  toLongitude - (Optional) Filter schedules by destination longitude
    * @responseBody 200 - [{"departure": {"name": "KRAPKOWICE | Kaufland","id": 21,"coordinates": {"longitude": 17.986,"latitude": 50.489},"time": "17:58:00","distance": 978},"arrival": {"name": "OPOLE GŁÓWNE","id": 49,"coordinates":{"longitude": 17.925,"latitude": 50.662},"time": "18:47:00","distance": 0},"travel_time": 49,"transfers": 2,"routes": [{"id": 2,"name": "LUZ Krapkowice  Strzelce Opolskie","operator": "LUZ","type": "bus","run": 52,"departure": {"name": "KRAPKOWICE | Kaufland","id": 21,"coordinates": {"longitude": 17.986,"latitude": 50.489},"time": "18:10:00"},"arrival": {"name": "KRAPKOWICE | Osiedle 1000lecia","id": 18,"coordinates": {"longitude": 17.973,"latitude": 50.478},"time": "18:14:00"},"travel_time": 4,"destination": "KRAPKOWICE"},{"id": 2,"name": "LUZ Krapkowice  Strzelce Opolskie","operator": "LUZ","type": "bus","run": 42,"departure": {"name": "KRAPKOWICE | Osiedle 1000lecia","id": 18,"coordinates": {"longitude": 17.973,"latitude": 50.478},"time": "18:21:00"},"arrival": {"name": "GOGOLIN | Dworzec Kolejowy","id": 24,"coordinates": {"longitude": 18.024,"latitude": 50.491},"time": "18:31:00"},"travel_time": 10,"destination": "STRZELCE OPOLSKIE"},{"id": 3,"name": "POLREGIO KędzierzynKoźle  Opole Główne","operator": "POLREGIO","type": "train","run": 68,"departure": {"name": "GOGOLIN","id": 44,"coordinates": {"longitude": 18.025,"latitude": 50.49},"time": "18:35:00"},"arrival": {"name": "OPOLE GŁÓWNE","id": 49,"coordinates": {"longitude": 17.925,"latitude": 50.662},"time": "18:47:00"},"travel_time": 12,"destination": "OPOLE GŁÓWNE"}]}]
    * @paramQuery radius - (Optional) in meters, default is 1000
+   * @paramQuery transferRadius - (Optional) in meters, default is 200. Determines how far you are willing to walk to a transfer stop.
+   * @paramQuery maxTransfers - (Optional) default is 2, maximum number of transfers allowed
    * @tag Routes
    */
   public async index({ request, response }: HttpContext) {
     const payload = await request.validateUsing(findRouteValidator);
     const radius = request.input("radius", 1000) as number;
-    const maxTransfers = request.input("max_transfers", 2) as number;
+    const maxTransfers = request.input("maxTransfers", 2) as number;
     const minTransferMinutes = 2;
     const maxTransferMinutes = 120;
     const WALKING_SPEED_MPS = 1.4;
+    const transferRadius = request.input("transferRadius", 200) as number;
     const startTime = DateTime.now()
       .setZone("Europe/Warsaw")
       .toFormat("HH:mm:ss");
@@ -67,7 +70,7 @@ export default class RoutesController {
       endStopIds,
       startTime,
       maxTransfers,
-      radius,
+      transferRadius,
     };
 
     const recursiveQuery = `
@@ -112,7 +115,7 @@ export default class RoutesController {
             'arrival_stop_id', next_end_rs.stop_id, 'arrival_stop_name', next_end_stop.name, 'arrival_time', next_es.time, 'arrival_coords', ST_AsGeoJSON(next_end_stop.location)
           )
         FROM route_search rs
-        JOIN stops transfer_stop ON ST_DWithin(rs.last_arrival_location::geography, transfer_stop.location::geography, :radius)
+        JOIN stops transfer_stop ON ST_DWithin(rs.last_arrival_location::geography, transfer_stop.location::geography, :transferRadius)
         JOIN route_stops next_start_rs ON next_start_rs.stop_id = transfer_stop.id
         JOIN schedules next_ss ON next_ss.route_stop_id = next_start_rs.id
         JOIN schedules next_es ON next_ss.run = next_es.run AND next_ss.destination = next_es.destination AND next_ss.sequence < next_es.sequence
