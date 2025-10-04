@@ -1,6 +1,14 @@
 import { DateTime } from "luxon";
 
-import { BaseModel, column } from "@adonisjs/lucid/orm";
+import {
+  BaseModel,
+  beforeFetch,
+  beforeFind,
+  column,
+  computed,
+} from "@adonisjs/lucid/orm";
+import db from "@adonisjs/lucid/services/db";
+import * as model from "@adonisjs/lucid/types/model";
 
 interface GeoJSONPoint {
   type: "Point";
@@ -27,6 +35,29 @@ export default class Report extends BaseModel {
     | "change"
     | "other"
     | "request_stop";
+
+  @computed({ serializeAs: "coordinates" })
+  get coordinates(): { longitude: number; latitude: number } | null {
+    const geojson = this.$extras.location_geojson as string | undefined;
+    if (geojson === undefined) {
+      return null;
+    }
+
+    const parsed = JSON.parse(geojson) as GeoJSONPoint;
+
+    return {
+      longitude: parsed.coordinates[0],
+      latitude: parsed.coordinates[1],
+    };
+  }
+
+  @beforeFind()
+  @beforeFetch()
+  public static async fetchAsGeoJSON(
+    query: model.ModelQueryBuilderContract<typeof Report>,
+  ) {
+    query.select("*", db.raw("ST_AsGeoJSON(location) as location_geojson"));
+  }
 
   @column()
   declare description: string | null;
