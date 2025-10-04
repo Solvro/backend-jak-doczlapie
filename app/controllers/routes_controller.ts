@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /* eslint-disable @unicorn/no-await-expression-member */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -15,19 +16,39 @@ import Schedule from "#models/schedule";
 import Stop from "#models/stop";
 import { findRouteValidator } from "#validators/find_route";
 
+const WALKING_SPEED_MPS = 1.4; // Prędkość chodu w metrach na sekundę (~5 km/h)
+
+// Funkcja pomocnicza do obliczania odległości Haversine
+function haversineDistance(
+  coords1: { lon: number; lat: number },
+  coords2: { lon: number; lat: number },
+): number {
+  const R = 6371e3; // Promień Ziemi w metrach
+  const φ1 = (coords1.lat * Math.PI) / 180;
+  const φ2 = (coords2.lat * Math.PI) / 180;
+  const Δφ = ((coords2.lat - coords1.lat) * Math.PI) / 180;
+  const Δλ = ((coords2.lon - coords1.lon) * Math.PI) / 180;
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default class RoutesController {
   /**
    * @index
-   * @summary Routes - Get routes based on start and end locations
-   * @description Find routes that connect two geographical points within a specified radius, including transfers, reports and live vehicle locations.
-   * @paramQuery fromLatitude - Latitude of the starting point.
-   * @paramQuery fromLongitude - Longitude of the starting point.
-   * @paramQuery toLatitude - Latitude of the destination point.
-   * @paramQuery toLongitude - Longitude of the destination point.
-   * @paramQuery radius - (Optional) in meters, default is 1000.
-   * @paramQuery transferRadius - (Optional) in meters, default is 200. Determines how far you are willing to walk to a transfer stop.
-   * @paramQuery maxTransfers - (Optional) default is 2, maximum number of transfers allowed.
-   * @responseBody 200 - [{"departure": {"name": "GOGOLIN","id": 44,"coordinates": {"longitude": 18.025,"latitude": 50.49},"time": "03:43:00","distance": 3888},"arrival": {"name": "OPOLE GŁÓWNE","id": 49,"coordinates": {"longitude": 17.925,"latitude": 50.662},"time": "04:50:00","distance": 0},"travel_time": 67,"transfers": 0,"routes": [{"id": 3,"name": "POLREGIO Kędzierzyn-Koźle  Opole Główne","operator": "POLREGIO","type": "train","run": 53,"current_location": {"coordinates": [18.115, 50.459],"timestamp": "20251004T23:15:58.748Z"},"departure": {"name": "GOGOLIN","id": 44,"coordinates": {"longitude": 18.025,"latitude": 50.49},"time": "04:30:00"},"arrival": {"name": "OPOLE GŁÓWNE","id": 49,"coordinates": {"longitude": 17.925,"latitude": 50.662},"time": "04:50:00"},"travel_time": 20,"destination": "OPOLE GŁÓWNE","reports": [{"id": 2,"run": 53,"type": "other","description": "Zgłoszenie od użytkownika.","created_at": "20251004T22:45:17.559+00:00","coordinates": {"longitude": 19.025,"latitude": 50.49}}]}]}]
+   * @summary Find public transport routes
+   * @description Finds end-to-end public transport routes between two geographical points. The algorithm supports transfers between nearby stops (e.g., bus to train) and includes live vehicle locations, estimated delays, and user-submitted reports for each leg of the journey. The results are sorted by the most convenient departure time, factoring in walking distance.
+   * @paramQuery fromLatitude - Latitude of the starting point. Example: 50.483006
+   * @paramQuery fromLongitude - Longitude of the starting point. Example: 17.975916
+   * @paramQuery toLatitude - Latitude of the destination point. Example: 50.662
+   * @paramQuery toLongitude - Longitude of the destination point. Example: 17.925
+   * @paramQuery radius - (Optional) Search radius in meters for start/end stops. Defaults to 1000.
+   * @paramQuery transferRadius - (Optional) Search radius in meters to find nearby transfer stops. Defaults to 200.
+   * @paramQuery maxTransfers - (Optional) Maximum number of transfers to consider. Defaults to 2.
+   * @responseBody 200 - A list of possible journeys, sorted by the best departure time and total travel time.
+   * @responseBodyExample 200 - [{"departure":{"name":"GOGOLIN","id":44,"coordinates":{"longitude":18.025,"latitude":50.49},"time":"03:43:00","distance":3888},"arrival":{"name":"OPOLE GŁÓWNE","id":49,"coordinates":{"longitude":17.925,"latitude":50.662},"time":"04:50:00","distance":0},"travel_time":67,"transfers":0,"routes":[{"id":3,"delay": 12 ,name":"POLREGIO Kędzierzyn-Koźle - Opole Główne","operator":"POLREGIO","type":"train","run":53,"current_location":{"coordinates":[18.115,50.459],"timestamp":"2025-10-04T23:15:58.748Z"},"delay":5,"departure":{"name":"GOGOLIN","id":44,"coordinates":{"longitude":18.025,"latitude":50.49},"time":"04:30:00"},"arrival":{"name":"OPOLE GŁÓWNE","id":49,"coordinates":{"longitude":17.925,"latitude":50.662},"time":"04:50:00"},"travel_time":20,"destination":"OPOLE GŁÓWNE","reports":[{"id":2,"run":53,"type":"other","description":"Zgłoszenie od użytkownika.","created_at":"2025-10-04T22:45:17.559+00:00","coordinates":{"longitude":19.025,"latitude":50.49}}]}]}]
    * @tag Routes
    */
   public async index({ request, response }: HttpContext) {
@@ -36,7 +57,6 @@ export default class RoutesController {
     const maxTransfers = request.input("maxTransfers", 2) as number;
     const minTransferMinutes = 3;
     const maxTransferMinutes = 1200;
-    const WALKING_SPEED_MPS = 1.4;
     const transferRadius = request.input("transferRadius", 200) as number;
     const startTime = DateTime.now()
       .setZone("Europe/Warsaw")
@@ -77,7 +97,6 @@ export default class RoutesController {
 
     const recursiveQuery = `
       WITH RECURSIVE route_search AS (
-        -- KROK BAZOWY (PIERWSZY ETAP)
         SELECT
           ss.id AS departure_schedule_id, es.id AS arrival_schedule_id,
           start_rs.stop_id AS start_stop_id, end_rs.stop_id AS end_stop_id,
@@ -101,7 +120,6 @@ export default class RoutesController {
         JOIN stops end_stop ON end_rs.stop_id = end_stop.id
         WHERE start_rs.stop_id = ANY(:startStopIds::int[]) AND ss.time >= :startTime
         UNION ALL
-        -- KROK REKURENCYJNY (PRZESIADKI)
         SELECT
           next_ss.id, next_es.id,
           rs.start_stop_id, next_end_rs.stop_id,
@@ -127,7 +145,6 @@ export default class RoutesController {
           AND next_ss.time BETWEEN rs.final_arrival_time + INTERVAL '${minTransferMinutes} minutes' AND rs.final_arrival_time + INTERVAL '${maxTransferMinutes} minutes'
           AND NOT (next_end_rs.stop_id = ANY(rs.path))
       )
-      -- FINALNE ZAPYTANIE
       SELECT
         rs.*,
         ROUND(ST_Distance(overall_start_stop.location::geography, ${fromPoint}::geography)) as distance_from_start,
@@ -187,46 +204,47 @@ export default class RoutesController {
         "location",
       );
 
-    // NOWE ZAPYTANIE O LOKALIZACJE Z FILTROWANIEM
     let latestLocations: any[] = [];
     if (runs.length > 0) {
       const { rows } = await db.rawQuery(
-        `
-        WITH recent_tracks_with_counts AS (
-          -- Krok 1: Pobierz tracki z ostatnich 15 minut i policz, ile ich jest dla każdego 'run'
-          SELECT
-            id, run, location, created_at,
-            COUNT(*) OVER(PARTITION BY run) as track_count
+        `WITH recent_tracks_with_counts AS (
+          SELECT id, run, location, created_at, COUNT(*) OVER(PARTITION BY run) as track_count
           FROM tracks
           WHERE run = ANY(:runs::int[]) AND created_at >= NOW() - INTERVAL '15 minutes'
-        ),
-        valid_moving_tracks AS (
-          -- Krok 2: Odfiltruj "zamrożone" punkty
+        ), valid_moving_tracks AS (
           SELECT id, run, location, created_at
           FROM recent_tracks_with_counts t1
-          WHERE
-            -- Jeśli jest mało punktów, zawsze je akceptuj
-            t1.track_count <= 2
-            OR
-            -- Jeśli jest więcej, sprawdź, czy w promieniu 100m jest inny punkt z tego samego kursu
-            EXISTS (
+          WHERE t1.track_count <= 2 OR EXISTS (
               SELECT 1 FROM recent_tracks_with_counts t2
               WHERE t2.run = t1.run AND t2.id != t1.id
               AND ST_DWithin(t1.location::geography, t2.location::geography, 100)
             )
-        ),
-        latest_valid_tracks AS (
-            -- Krok 3: Z przefiltrowanej listy wybierz najnowszy punkt dla każdego 'run'
+        ), latest_valid_tracks AS (
             SELECT *, ROW_NUMBER() OVER(PARTITION BY run ORDER BY created_at DESC) as rn
             FROM valid_moving_tracks
         )
         SELECT run, ST_AsGeoJSON(location) as location, created_at
         FROM latest_valid_tracks
-        WHERE rn = 1;
-      `,
+        WHERE rn = 1;`,
         { runs },
       );
       latestLocations = rows;
+    }
+
+    let fullRunSchedules: any[] = [];
+    if (runs.length > 0) {
+      const { rows } = await db.rawQuery(
+        `
+            SELECT sch.run, sch.sequence, sch.time, s.id as stop_id, s.name as stop_name, ST_AsGeoJSON(s.location) as location
+            FROM schedules sch
+            JOIN route_stops rs ON sch.route_stop_id = rs.id
+            JOIN stops s ON rs.stop_id = s.id
+            WHERE sch.run = ANY(:runs::int[])
+            ORDER BY sch.run, sch.sequence ASC;
+        `,
+        { runs },
+      );
+      fullRunSchedules = rows;
     }
 
     const reportsMap = new Map<string, any[]>();
@@ -247,11 +265,21 @@ export default class RoutesController {
 
     const locationsMap = new Map<number, any>();
     for (const loc of latestLocations) {
-      const locations = JSON.parse(loc.location).coordinates;
+      const coords = JSON.parse(loc.location).coordinates;
       locationsMap.set(loc.run, {
-        longitude: locations[0],
-        latitude: locations[1],
+        coordinates: { longitude: coords[0], latitude: coords[1] },
         timestamp: loc.created_at,
+      });
+    }
+
+    const runSchedulesMap = new Map<number, any[]>();
+    for (const schedule of fullRunSchedules) {
+      if (!runSchedulesMap.has(schedule.run)) {
+        runSchedulesMap.set(schedule.run, []);
+      }
+      runSchedulesMap.get(schedule.run)?.push({
+        ...schedule,
+        location: JSON.parse(schedule.location).coordinates,
       });
     }
 
@@ -324,6 +352,88 @@ export default class RoutesController {
           const runReports = reportsMap.get(runKey) ?? [];
           const nullRunReports = reportsMap.get(nullRunKey) ?? [];
           const currentLocation = locationsMap.get(leg.run) ?? null;
+          let delay = null;
+
+          if (currentLocation !== null) {
+            const runSchedule = runSchedulesMap.get(leg.run);
+            if (
+              runSchedule !== undefined &&
+              runSchedule !== null &&
+              runSchedule.length > 1
+            ) {
+              let previousStop = null;
+              let nextStop = null;
+              for (let i = 0; i < runSchedule.length - 1; i++) {
+                const pStop = runSchedule[i];
+                const nStop = runSchedule[i + 1];
+                const distToVehicle = haversineDistance(
+                  { lon: pStop.location[0], lat: pStop.location[1] },
+                  {
+                    lon: currentLocation.coordinates.longitude,
+                    lat: currentLocation.coordinates.latitude,
+                  },
+                );
+                const distToNextStop = haversineDistance(
+                  { lon: pStop.location[0], lat: pStop.location[1] },
+                  { lon: nStop.location[0], lat: nStop.location[1] },
+                );
+                if (distToVehicle < distToNextStop) {
+                  previousStop = pStop;
+                  nextStop = nStop;
+                  break;
+                }
+              }
+
+              if (Boolean(previousStop) && Boolean(nextStop)) {
+                const distSegment = haversineDistance(
+                  {
+                    lon: previousStop.location[0],
+                    lat: previousStop.location[1],
+                  },
+                  { lon: nextStop.location[0], lat: nextStop.location[1] },
+                );
+                const distVehicleFromPrev = haversineDistance(
+                  {
+                    lon: previousStop.location[0],
+                    lat: previousStop.location[1],
+                  },
+                  {
+                    lon: currentLocation.coordinates.longitude,
+                    lat: currentLocation.coordinates.latitude,
+                  },
+                );
+                const travelRatio =
+                  distSegment > 0 ? distVehicleFromPrev / distSegment : 0;
+
+                const scheduledTimeAtPrev = DateTime.fromISO(
+                  previousStop.time,
+                  { zone: "Europe/Warsaw" },
+                );
+                const scheduledTimeAtNext = DateTime.fromISO(nextStop.time, {
+                  zone: "Europe/Warsaw",
+                });
+                const segmentDurationMinutes = scheduledTimeAtNext.diff(
+                  scheduledTimeAtPrev,
+                  "minutes",
+                ).minutes;
+
+                const scheduledTimeAtVehicleLocation = scheduledTimeAtPrev.plus(
+                  { minutes: segmentDurationMinutes * travelRatio },
+                );
+                const actualTimeAtVehicleLocation = DateTime.fromJSDate(
+                  new Date(currentLocation.timestamp),
+                  { zone: "Europe/Warsaw" },
+                );
+
+                delay = Math.round(
+                  actualTimeAtVehicleLocation.diff(
+                    scheduledTimeAtVehicleLocation,
+                    "minutes",
+                  ).minutes,
+                );
+              }
+            }
+          }
 
           return {
             id: leg.route_id,
@@ -332,6 +442,7 @@ export default class RoutesController {
             type: leg.route_type,
             run: leg.run,
             current_location: currentLocation,
+            delay,
             departure: {
               name: leg.departure_stop_name,
               id: leg.departure_stop_id,
