@@ -1,3 +1,11 @@
+/* eslint-disable @unicorn/no-await-expression-member */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { DateTime } from "luxon";
+
 import type { HttpContext } from "@adonisjs/core/http";
 import db from "@adonisjs/lucid/services/db";
 
@@ -15,189 +23,266 @@ export default class RoutesController {
    * @paramQuery  fromLongitude - (Optional) Filter schedules by starting longitude
    * @paramQuery  toLatitude - (Optional) Filter schedules by destination latitude
    * @paramQuery  toLongitude - (Optional) Filter schedules by destination longitude
-   * @responseBody 200 - [{"id": 1, "name": "PKS Krapkowice Gogolin", "operator": "PKS w Strzelcach Op. S.A.", "departure_stop": {"id": 5, "name": "Krapkowice ul. Opolska I", "time": "12:28:00", "distance": 789, "coordinates": { "longitude": 17.962, "latitude": 50.478}},"arrival_stop": {"id": 14,"name": "Gogolin ul. Krapkowicka I", "time": "12:47:00", "distance": 929, "coordinates": {"longitude": 18.013, "latitude": 50.489}},"run": 3, "destination": "KRAPKOWICE OS. 1000L", "travel_time": 19, "conditions": [{"name": "6x","description": "Kursuje w soboty powszednie oprócz Wielkiej Soboty"}]}]
+   * @responseBody 200 - [{"departure": {"name": "KRAPKOWICE | Kaufland","id": 21,"coordinates": {"longitude": 17.986,"latitude": 50.489},"time": "17:58:00","distance": 978},"arrival": {"name": "OPOLE GŁÓWNE","id": 49,"coordinates":{"longitude": 17.925,"latitude": 50.662},"time": "18:47:00","distance": 0},"travel_time": 49,"transfers": 2,"routes": [{"id": 2,"name": "LUZ Krapkowice  Strzelce Opolskie","operator": "LUZ","type": "bus","run": 52,"departure": {"name": "KRAPKOWICE | Kaufland","id": 21,"coordinates": {"longitude": 17.986,"latitude": 50.489},"time": "18:10:00"},"arrival": {"name": "KRAPKOWICE | Osiedle 1000lecia","id": 18,"coordinates": {"longitude": 17.973,"latitude": 50.478},"time": "18:14:00"},"travel_time": 4,"destination": "KRAPKOWICE"},{"id": 2,"name": "LUZ Krapkowice  Strzelce Opolskie","operator": "LUZ","type": "bus","run": 42,"departure": {"name": "KRAPKOWICE | Osiedle 1000lecia","id": 18,"coordinates": {"longitude": 17.973,"latitude": 50.478},"time": "18:21:00"},"arrival": {"name": "GOGOLIN | Dworzec Kolejowy","id": 24,"coordinates": {"longitude": 18.024,"latitude": 50.491},"time": "18:31:00"},"travel_time": 10,"destination": "STRZELCE OPOLSKIE"},{"id": 3,"name": "POLREGIO KędzierzynKoźle  Opole Główne","operator": "POLREGIO","type": "train","run": 68,"departure": {"name": "GOGOLIN","id": 44,"coordinates": {"longitude": 18.025,"latitude": 50.49},"time": "18:35:00"},"arrival": {"name": "OPOLE GŁÓWNE","id": 49,"coordinates": {"longitude": 17.925,"latitude": 50.662},"time": "18:47:00"},"travel_time": 12,"destination": "OPOLE GŁÓWNE"}]}]
    * @paramQuery radius - (Optional) in meters, default is 1000
    * @tag Routes
    */
   public async index({ request, response }: HttpContext) {
     const payload = await request.validateUsing(findRouteValidator);
     const radius = request.input("radius", 1000) as number;
+    const maxTransfers = request.input("max_transfers", 2) as number;
+    const minTransferMinutes = 2;
+    const maxTransferMinutes = 120;
+    const WALKING_SPEED_MPS = 1.4;
+    const startTime = DateTime.now()
+      .setZone("Europe/Warsaw")
+      .toFormat("HH:mm:ss");
 
     const fromPoint = `ST_SetSRID(ST_MakePoint(${payload.fromLongitude}, ${payload.fromLatitude}), 4326)`;
     const toPoint = `ST_SetSRID(ST_MakePoint(${payload.toLongitude}, ${payload.toLatitude}), 4326)`;
 
-    const startStopT = await Stop.query()
-      .whereRaw(`ST_DWithin(location::geography, ${fromPoint}::geography, ?)`, [
-        radius,
-      ])
-      .select("id");
-    const startStopIds = startStopT.map((s) => s.id);
+    const startStopIds = (
+      await Stop.query()
+        .whereRaw(
+          `ST_DWithin(location::geography, ${fromPoint}::geography, ?)`,
+          [radius],
+        )
+        .select("id")
+    ).map((s) => s.id);
 
-    const endStopT = await Stop.query()
-      .whereRaw(`ST_DWithin(location::geography, ${toPoint}::geography, ?)`, [
-        radius,
-      ])
-      .select("id");
-
-    const endStopIds = endStopT.map((s) => s.id);
+    const endStopIds = (
+      await Stop.query()
+        .whereRaw(`ST_DWithin(location::geography, ${toPoint}::geography, ?)`, [
+          radius,
+        ])
+        .select("id")
+    ).map((s) => s.id);
 
     if (startStopIds.length === 0 || endStopIds.length === 0) {
       return response.ok([]);
     }
 
-    const journeys = (await db
-      .from("schedules as start_schedule")
-      .join(
-        "route_stops as start_rs",
-        "start_schedule.route_stop_id",
-        "start_rs.id",
+    const bindings = {
+      startStopIds,
+      endStopIds,
+      startTime,
+      maxTransfers,
+      radius,
+    };
+
+    const recursiveQuery = `
+      WITH RECURSIVE route_search AS (
+        -- === KROK BAZOWY (PIERWSZY ETAP) ===
+        SELECT
+          ss.id AS departure_schedule_id, es.id AS arrival_schedule_id,
+          start_rs.stop_id AS start_stop_id, end_rs.stop_id AS end_stop_id,
+          es.time AS final_arrival_time, 0 AS transfers,
+          end_stop.location AS last_arrival_location,
+          ARRAY[start_rs.stop_id, end_rs.stop_id] AS path,
+          ARRAY[
+            jsonb_build_object(
+              'route_id', r.id, 'route_name', r.name, 'operator', r.operator, 'route_type', r.type, 'run', ss.run, 'destination', ss.destination,
+              'departure_schedule_id', ss.id, 'sequence', ss.sequence,
+              'departure_stop_id', start_rs.stop_id, 'departure_stop_name', start_stop.name, 'departure_time', ss.time, 'departure_coords', ST_AsGeoJSON(start_stop.location),
+              'arrival_stop_id', end_rs.stop_id, 'arrival_stop_name', end_stop.name, 'arrival_time', es.time, 'arrival_coords', ST_AsGeoJSON(end_stop.location)
+            )
+          ] AS legs
+        FROM schedules ss
+        JOIN schedules es ON ss.run = es.run AND ss.destination = es.destination AND ss.sequence < es.sequence
+        JOIN route_stops start_rs ON ss.route_stop_id = start_rs.id
+        JOIN route_stops end_rs ON es.route_stop_id = end_rs.id AND start_rs.route_id = end_rs.route_id
+        JOIN routes r ON start_rs.route_id = r.id
+        JOIN stops start_stop ON start_rs.stop_id = start_stop.id
+        JOIN stops end_stop ON end_rs.stop_id = end_stop.id
+        WHERE start_rs.stop_id = ANY(:startStopIds::int[]) AND ss.time >= :startTime
+
+        UNION ALL
+
+        -- === KROK REKURENCYJNY (PRZESIADKI) ===
+        SELECT
+          next_ss.id, next_es.id,
+          rs.start_stop_id, next_end_rs.stop_id,
+          next_es.time, rs.transfers + 1,
+          next_end_stop.location,
+          rs.path || next_end_rs.stop_id,
+          rs.legs || jsonb_build_object(
+            'route_id', next_r.id, 'route_name', next_r.name, 'operator', next_r.operator, 'route_type', next_r.type, 'run', next_ss.run, 'destination', next_ss.destination,
+            'departure_schedule_id', next_ss.id, 'sequence', next_ss.sequence,
+            'departure_stop_id', transfer_stop.id, 'departure_stop_name', transfer_stop.name, 'departure_time', next_ss.time, 'departure_coords', ST_AsGeoJSON(transfer_stop.location),
+            'arrival_stop_id', next_end_rs.stop_id, 'arrival_stop_name', next_end_stop.name, 'arrival_time', next_es.time, 'arrival_coords', ST_AsGeoJSON(next_end_stop.location)
+          )
+        FROM route_search rs
+        JOIN stops transfer_stop ON ST_DWithin(rs.last_arrival_location::geography, transfer_stop.location::geography, :radius)
+        JOIN route_stops next_start_rs ON next_start_rs.stop_id = transfer_stop.id
+        JOIN schedules next_ss ON next_ss.route_stop_id = next_start_rs.id
+        JOIN schedules next_es ON next_ss.run = next_es.run AND next_ss.destination = next_es.destination AND next_ss.sequence < next_es.sequence
+        JOIN route_stops next_end_rs ON next_es.route_stop_id = next_end_rs.id AND next_start_rs.route_id = next_end_rs.route_id
+        JOIN routes next_r ON next_start_rs.route_id = next_r.id
+        JOIN stops next_end_stop ON next_end_rs.stop_id = next_end_stop.id
+        WHERE
+          rs.transfers < :maxTransfers
+          AND next_ss.time BETWEEN rs.final_arrival_time + INTERVAL '${minTransferMinutes} minutes' AND rs.final_arrival_time + INTERVAL '${maxTransferMinutes} minutes'
+          AND NOT (next_end_rs.stop_id = ANY(rs.path))
       )
-      .join(
-        "stops as start_stop_details",
-        "start_rs.stop_id",
-        "start_stop_details.id",
-      )
-      .join("routes", "start_rs.route_id", "routes.id")
-      .join("route_stops as end_rs", "routes.id", "end_rs.route_id")
-      .join("schedules as end_schedule", (join) => {
-        join
-          .on("end_rs.id", "end_schedule.route_stop_id")
-          .andOn("start_schedule.run", "end_schedule.run")
-          .andOn("start_schedule.destination", "end_schedule.destination");
-      })
-      .join(
-        "stops as end_stop_details",
-        "end_rs.stop_id",
-        "end_stop_details.id",
-      )
-      .whereIn("start_rs.stop_id", startStopIds)
-      .whereIn("end_rs.stop_id", endStopIds)
-      .whereRaw("start_rs.id < end_rs.id")
-      .whereRaw("end_schedule.time > start_schedule.time")
-      .select(
-        "routes.id as route_id",
-        "routes.name as route_name",
-        "routes.operator",
-        "start_schedule.id as departure_schedule_id",
-        "start_schedule.time as departure_time",
-        "start_schedule.run",
-        "start_schedule.destination",
-        "start_stop_details.id as start_stop_id",
-        "start_stop_details.name as start_stop_name",
-        "end_schedule.time as arrival_time",
-        "end_stop_details.id as end_stop_id",
-        "end_stop_details.name as end_stop_name",
-        db.raw(
-          `ST_AsGeoJSON(start_stop_details.location) as start_stop_coords`,
-        ),
-        db.raw(`ST_AsGeoJSON(end_stop_details.location) as end_stop_coords`),
-        db.raw(
-          `ROUND(ST_Distance(start_stop_details.location::geography, ${fromPoint}::geography)) as distance_to_start_stop`,
-        ),
-        db.raw(
-          `ROUND(ST_Distance(end_stop_details.location::geography, ${toPoint}::geography)) as distance_from_end_stop`,
-        ),
-        db.raw(
-          `EXTRACT(EPOCH FROM (end_schedule.time - start_schedule.time)) / 60 as travel_time_minutes`,
-        ),
-      )
-      .distinct()) as {
-      route_id: number;
-      route_name: string;
-      operator: string;
-      departure_schedule_id: number;
-      departure_time: string;
-      run: number;
-      destination: string;
-      start_stop_id: number;
-      start_stop_name: string;
-      arrival_time: string;
-      end_stop_id: number;
-      end_stop_name: string;
-      start_stop_coords: string;
-      end_stop_coords: string;
-      distance_to_start_stop: number;
-      distance_from_end_stop: number;
-      travel_time_minutes: number;
-    }[];
+      -- === FINALNE ZAPYTANIE ===
+      SELECT
+        rs.*,
+        ROUND(ST_Distance(overall_start_stop.location::geography, ${fromPoint}::geography)) as distance_from_start,
+        ROUND(ST_Distance(overall_end_stop.location::geography, ${toPoint}::geography)) as distance_to_end
+      FROM route_search rs
+      JOIN stops overall_start_stop ON rs.start_stop_id = overall_start_stop.id
+      JOIN stops overall_end_stop ON rs.end_stop_id = overall_end_stop.id
+      WHERE rs.end_stop_id = ANY(:endStopIds::int[])
+      ORDER BY final_arrival_time, transfers
+      LIMIT 100;
+    `;
+
+    const { rows: journeys } = await db.rawQuery(recursiveQuery, bindings);
 
     if (journeys.length === 0) {
       return response.ok([]);
     }
 
-    const departureScheduleIds = journeys.map((j) => j.departure_schedule_id);
-    const scheduleConditions = (await db
-      .from("schedule_conditions")
-      .join("conditions", "schedule_conditions.condition_id", "conditions.id")
-      .whereIn("schedule_conditions.schedule_id", departureScheduleIds)
-      .select(
-        "schedule_conditions.schedule_id",
-        "conditions.name",
-        "conditions.description",
-      )) as { schedule_id: number; name: string; description: string }[];
+    const result = journeys.map(
+      (j: {
+        legs: {
+          arrival_stop_id: string;
+          arrival_stop_name: string;
+          departure_stop_id: string;
+          departure_stop_name: string;
+          departure_coords: string;
+          arrival_coords: string;
+          distance_from_start: number;
+          departure_time: string;
+          arrival_time: string;
+        }[];
+        distance_from_start: number;
+        distance_to_end: number;
+        transfers: unknown;
+      }) => {
+        const firstLeg = j.legs[0];
+        const lastLeg = j.legs[j.legs.length - 1];
 
-    const conditionsMap = new Map<
-      number,
-      { name: string; description: string }[]
-    >();
-    for (const sc of scheduleConditions) {
-      if (!conditionsMap.has(sc.schedule_id)) {
-        conditionsMap.set(sc.schedule_id, []);
-      }
-      conditionsMap
-        .get(sc.schedule_id)
-        ?.push({ name: sc.name, description: sc.description });
-    }
+        const walkingTimeToStartMinutes = Math.ceil(
+          j.distance_from_start / WALKING_SPEED_MPS / 60,
+        );
+        const walkingTimeFromEndMinutes = Math.ceil(
+          j.distance_to_end / WALKING_SPEED_MPS / 60,
+        );
 
-    const result = journeys.map((j) => {
-      const departureCoords = JSON.parse(j.start_stop_coords) as {
-        type: string;
-        coordinates: [number, number];
-      };
-      const arrivalCoords = JSON.parse(j.end_stop_coords) as {
-        type: string;
-        coordinates: [number, number];
-      };
+        const busDepartureTime = DateTime.fromISO(firstLeg.departure_time, {
+          zone: "Europe/Warsaw",
+        });
+        const busArrivalTime = DateTime.fromISO(lastLeg.arrival_time, {
+          zone: "Europe/Warsaw",
+        });
 
-      return {
-        id: j.route_id,
-        name: j.route_name,
-        operator: j.operator,
-        departure_stop: {
-          id: j.start_stop_id,
-          name: j.start_stop_name,
-          time: j.departure_time,
-          distance: j.distance_to_start_stop,
-          coordinates: {
-            longitude: departureCoords.coordinates[0],
-            latitude: departureCoords.coordinates[1],
+        const effectiveDepartureTime = busDepartureTime.minus({
+          minutes: walkingTimeToStartMinutes,
+        });
+        const effectiveArrivalTime = busArrivalTime.plus({
+          minutes: walkingTimeFromEndMinutes,
+        });
+
+        const firstLegDepartureCoords = JSON.parse(
+          firstLeg.departure_coords,
+        ).coordinates;
+        const lastLegArrivalCoords = JSON.parse(
+          lastLeg.arrival_coords,
+        ).coordinates;
+
+        return {
+          departure: {
+            name: firstLeg.departure_stop_name,
+            id: firstLeg.departure_stop_id,
+            coordinates: {
+              longitude: firstLegDepartureCoords[0],
+              latitude: firstLegDepartureCoords[1],
+            },
+            time: effectiveDepartureTime.toFormat("HH:mm:ss"),
+            distance: j.distance_from_start,
           },
-        },
-        arrival_stop: {
-          id: j.end_stop_id,
-          name: j.end_stop_name,
-          time: j.arrival_time,
-          distance: j.distance_from_end_stop,
-          coordinates: {
-            longitude: arrivalCoords.coordinates[0],
-            latitude: arrivalCoords.coordinates[1],
+          arrival: {
+            name: lastLeg.arrival_stop_name,
+            id: lastLeg.arrival_stop_id,
+            coordinates: {
+              longitude: lastLegArrivalCoords[0],
+              latitude: lastLegArrivalCoords[1],
+            },
+            time: effectiveArrivalTime.toFormat("HH:mm:ss"),
+            distance: j.distance_to_end,
           },
-        },
-        run: j.run,
-        destination: j.destination,
-        travel_time: Math.round(j.travel_time_minutes),
-        conditions: conditionsMap.get(j.departure_schedule_id) ?? [],
-      };
-    });
+          travel_time: Math.round(
+            effectiveArrivalTime.diff(effectiveDepartureTime, "minutes")
+              .minutes,
+          ),
+          transfers: j.transfers,
+          routes: j.legs.map((leg: any) => {
+            const legDepartureTime = DateTime.fromISO(leg.departure_time, {
+              zone: "Europe/Warsaw",
+            });
+            const legArrivalTime = DateTime.fromISO(leg.arrival_time, {
+              zone: "Europe/Warsaw",
+            });
+            const legDepartureCoords = JSON.parse(
+              leg.departure_coords,
+            ).coordinates;
+            const legArrivalCoords = JSON.parse(leg.arrival_coords).coordinates;
 
-    const currentTime = new Date().toLocaleTimeString("sv-SE", {
-      timeZone: "Europe/Warsaw",
-    });
+            return {
+              id: leg.route_id,
+              name: leg.route_name,
+              operator: leg.operator,
+              type: leg.route_type,
+              run: leg.run,
+              departure: {
+                name: leg.departure_stop_name,
+                id: leg.departure_stop_id,
+                coordinates: {
+                  longitude: legDepartureCoords[0],
+                  latitude: legDepartureCoords[1],
+                },
+                time: leg.departure_time,
+              },
+              arrival: {
+                name: leg.arrival_stop_name,
+                id: leg.arrival_stop_id,
+                coordinates: {
+                  longitude: legArrivalCoords[0],
+                  latitude: legArrivalCoords[1],
+                },
+                time: leg.arrival_time,
+              },
+              travel_time: Math.round(
+                legArrivalTime.diff(legDepartureTime, "minutes").minutes,
+              ),
+              destination: leg.destination,
+            };
+          }),
+          _effective_departure_time:
+            effectiveDepartureTime.toFormat("HH:mm:ss"),
+        };
+      },
+    );
+
     result.sort(
-      (a, b) =>
-        (a.departure_stop.time < currentTime ? 1 : 0) -
-          (b.departure_stop.time < currentTime ? 1 : 0) ||
-        a.departure_stop.time.localeCompare(b.departure_stop.time),
+      (
+        a: { _effective_departure_time: string; travel_time: number },
+        b: { _effective_departure_time: string; travel_time: number },
+      ) => {
+        const departureComparison = a._effective_departure_time.localeCompare(
+          b._effective_departure_time,
+        );
+        if (departureComparison !== 0) {
+          return departureComparison;
+        }
+        return a.travel_time - b.travel_time;
+      },
+    );
+
+    result.forEach(
+      (r: { _effective_departure_time?: string }) =>
+        delete r._effective_departure_time,
     );
 
     return response.ok(result);

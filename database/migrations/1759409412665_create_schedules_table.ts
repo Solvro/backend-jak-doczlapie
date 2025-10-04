@@ -12,6 +12,7 @@ export default class extends BaseSchema {
         .inTable("route_stops")
         .onDelete("CASCADE");
       table.time("time");
+      table.integer("sequence");
       table.integer("run");
       table.string("destination").nullable();
       table.timestamps(true);

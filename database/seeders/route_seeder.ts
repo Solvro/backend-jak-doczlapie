@@ -2216,13 +2216,10 @@ export default class extends BaseSeeder {
         type: "Point",
         coordinates: stopData.coords,
       });
-      // ZMIANA: Dodanie pola `type` do tworzenia/aktualizacji przystanku
       const stop = await Stop.updateOrCreate(
         { name: stopData.name },
         {
-          location: db.raw("ST_GeomFromGeoJSON(?)", [
-            geoJSONString,
-          ]) as unknown as Stop["location"],
+          location: db.raw("ST_GeomFromGeoJSON(?)", [geoJSONString]) as any,
           type: stopData.type as any,
         },
       );
@@ -2237,21 +2234,30 @@ export default class extends BaseSeeder {
         { operator: routeData.operator, type: routeData.type as any },
       );
 
-      const routeStopMap = new Map<string, RouteStop>();
+      // Zbierz wszystkie unikalne przystanki dla całej trasy (obu kierunków)
+      const uniqueStopNames = new Set<string>();
       for (const direction of routeData.directions) {
         for (const stopSchedule of direction.stopSchedules) {
-          const stop = stopMap.get(stopSchedule.stopName);
-          if (!stop) {
-            continue;
-          }
-          const routeStop = await RouteStop.firstOrCreate({
-            routeId: route.id,
-            stopId: stop.id,
-          });
-          routeStopMap.set(`${route.id}-${stop.id}`, routeStop);
+          uniqueStopNames.add(stopSchedule.stopName);
         }
       }
 
+      // Stwórz powiązania Route-Stop
+      const routeStopMap = new Map<string, RouteStop>();
+      for (const stopName of uniqueStopNames) {
+        const stop = stopMap.get(stopName);
+        if (!stop) {
+          this.logger.warn(`Stop not found in map: ${stopName}`);
+          continue;
+        }
+        const routeStop = await RouteStop.firstOrCreate({
+          routeId: route.id,
+          stopId: stop.id,
+        });
+        routeStopMap.set(`${route.id}-${stop.id}`, routeStop);
+      }
+
+      // Przetwarzaj kierunki i przebiegi
       for (const direction of routeData.directions) {
         const processRuns = async (
           timesKey:
@@ -2267,7 +2273,7 @@ export default class extends BaseSeeder {
           )
             return;
 
-          const numRuns = direction.stopSchedules[0][timesKey]!.length;
+          const numRuns = (direction.stopSchedules[0] as any)[timesKey]!.length;
           if (numRuns === 0) return;
 
           const conditionIds = typeNames
@@ -2275,13 +2281,18 @@ export default class extends BaseSeeder {
             .filter((id) => id);
 
           for (let runIndex = 0; runIndex < numRuns; runIndex++) {
-            for (const stopSchedule of direction.stopSchedules) {
-              const time = stopSchedule[timesKey]?.[runIndex];
+            // Użyj pętli z indeksem, aby uzyskać `sequence`
+            for (const [
+              stopIndex,
+              stopSchedule,
+            ] of direction.stopSchedules.entries()) {
+              const time = (stopSchedule as any)[timesKey]?.[runIndex];
               if (!time) continue;
 
               const stop = stopMap.get(stopSchedule.stopName)!;
               const routeStop = routeStopMap.get(`${route.id}-${stop.id}`)!;
 
+              // ZMIANA: Dodaj `sequence` do tworzenia/aktualizacji rekordu Schedule
               const schedule = await Schedule.updateOrCreate(
                 {
                   routeStopId: routeStop.id,
@@ -2290,6 +2301,7 @@ export default class extends BaseSeeder {
                 {
                   time: `${time}:00`,
                   destination: direction.destination,
+                  sequence: stopIndex + 1, // Użyj indeksu przystanku w kierunku jako sekwencji
                 },
               );
               await schedule.related("conditions").sync(conditionIds);
@@ -2298,7 +2310,6 @@ export default class extends BaseSeeder {
           }
         };
 
-        // Elastyczne wywoływanie processRuns
         if (routeData.operator === "PKS w Strzelcach Op. S.A.") {
           await processRuns("weekdayTimes", ["D", "ą", "m"]);
           await processRuns("saturdayTimes", ["6x"]);

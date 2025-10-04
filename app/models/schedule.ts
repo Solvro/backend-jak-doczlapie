@@ -14,6 +14,9 @@ export default class Schedule extends BaseModel {
   declare time: string;
 
   @column()
+  declare sequence: number;
+
+  @column()
   declare destination: string;
 
   @manyToMany(() => Condition, {
