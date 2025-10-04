@@ -2247,7 +2247,6 @@ export default class extends BaseSeeder {
       for (const stopName of uniqueStopNames) {
         const stop = stopMap.get(stopName);
         if (!stop) {
-          this.logger.warn(`Stop not found in map: ${stopName}`);
           continue;
         }
         const routeStop = await RouteStop.firstOrCreate({
