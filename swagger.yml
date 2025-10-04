@@ -78,7 +78,7 @@ components:
       properties:
         id:
           type: "number"
-          example: 298
+          example: 209
         name:
           type: "string"
           example: "John Doe"
@@ -100,7 +100,7 @@ components:
       properties:
         id:
           type: "number"
-          example: 504
+          example: 568
         name:
           type: "string"
           example: "John Doe"
@@ -140,13 +140,13 @@ components:
       properties:
         id:
           type: "number"
-          example: 254
+          example: 275
         route_id:
           type: "number"
-          example: 791
+          example: 147
         stop_id:
           type: "number"
-          example: 65
+          example: 852
         route:
           $ref: "#/components/schemas/Route"
           example: null
@@ -165,13 +165,13 @@ components:
       properties:
         id:
           type: "number"
-          example: 999
+          example: 398
         time:
           type: "string"
           example: "Lorem Ipsum"
         sequence:
           type: "number"
-          example: 233
+          example: 676
         destination:
           type: "string"
           example: "Lorem Ipsum"
@@ -182,10 +182,10 @@ components:
             example: null
         route_stop_id:
           type: "number"
-          example: 831
+          example: 771
         run:
           type: "number"
-          example: 640
+          example: 823
         route_stop:
           $ref: "#/components/schemas/RouteStop"
           example: null
@@ -204,7 +204,7 @@ components:
       properties:
         id:
           type: "number"
-          example: 675
+          example: 715
         name:
           type: "string"
           example: "John Doe"
@@ -239,17 +239,17 @@ components:
       properties:
         id:
           type: "number"
-          example: 665
+          example: 979
         created_at:
           type: "string"
           example: "2021-03-23T16:13:08.489+01:00"
           format: "date-time"
         route_id:
           type: "number"
-          example: 35
+          example: 164
         run:
           type: "number"
-          example: 645
+          example: 69
         location:
           $ref: "#/components/schemas/GeoJSONPoint"
           example: null
@@ -286,13 +286,13 @@ components:
           required: true
         radius:
           type: "number"
-          example: 18
+          example: 285
       example:
         fromLatitude: -90
         fromLongitude: -180
         toLatitude: -90
         toLongitude: -180
-        radius: 18
+        radius: 285
       description: "findRouteValidator (Validator)"
     nearbyRouteValidator:
       type: "object"
@@ -311,11 +311,11 @@ components:
           required: true
         radius:
           type: "number"
-          example: 38
+          example: 405
       example:
         latitude: -90
         longitude: -180
-        radius: 38
+        radius: 405
       description: "nearbyRouteValidator (Validator)"
     storeTrackingValidator:
       type: "object"
@@ -384,6 +384,20 @@ paths:
         - in: "query"
           name: "radius"
           description: "(Optional) in meters, default is 1000"
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: "transferRadius"
+          description: "(Optional) in meters, default is 200. Determines how far you are willing to walk to a transfer stop."
+          schema:
+            example: null
+            type: "string"
+          required: false
+        - in: "query"
+          name: "maxTransfers"
+          description: "(Optional) default is 2, maximum number of transfers allowed"
           schema:
             example: null
             type: "string"
@@ -712,10 +726,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Track"
               example:
-                id: 665
+                id: 979
                 created_at: "2021-03-23T16:13:08.489+01:00"
-                route_id: 35
-                run: 645
+                route_id: 164
+                run: 69
           description: "Returns **200** (OK) as **application/json**"
       security: []
       requestBody:
