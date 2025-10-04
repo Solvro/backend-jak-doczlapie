@@ -11,30 +11,104 @@ export default class StopsController {
    * @paramQuery longitude
    * @paramQuery latitude
    * @paramQuery radius - (Optional) in meters
-   * @responseBody 200 - {"id": 17,"type":"bus","name": "KRAPKOWICE | ul. Prudnicka", "routes": [{"id": 2,"name": "LUZ Krapkowice Strzelce Opolskie","operator": "LUZ"}],"coordinates": {"longitude": 17.965,"latitude": 50.471},"distance": 355}
+   * @responseBody 200 - [{"id": 38,"longitude": 18.303,"latitude": 50.412,"coordinates": {"longitude": 18.303,"latitude": 50.412},"type": "bus","routes": [{"id": 2,"name": "LUZ Krapkowice Strzelce Opolskie","operator": "LUZ","type": "bus","destinations": ["KRAPKOWICE","STRZELCE OPOLSKIE"]}],"distance": 4396019}]
    * @tag Stops
    */
-  async index({ request, response }: HttpContext) {
+  public async index({ request }: HttpContext) {
     const { latitude, longitude, radius } =
       await request.validateUsing(nearbyRouteValidator);
     const searchRadiusInMeters = radius ?? 1000;
 
     const nearbyStops = await Stop.query()
       .select(
+        "id",
+        "name",
+        "location",
+        "type",
         db.raw(
-          "ST_Distance(location, ST_MakePoint(?, ?)::geography) as distance_in_meters",
+          "ST_Distance(location::geography, ST_MakePoint(?, ?)::geography) as distance_in_meters",
           [longitude, latitude],
         ),
       )
-      .whereRaw("ST_DWithin(location, ST_MakePoint(?, ?)::geography, ?)", [
-        longitude,
-        latitude,
-        searchRadiusInMeters,
-      ])
-      .preload("routes")
+      .whereRaw(
+        "ST_DWithin(location::geography, ST_MakePoint(?, ?)::geography, ?)",
+        [longitude, latitude, searchRadiusInMeters],
+      )
       .orderBy("distance_in_meters", "asc");
 
-    return response.ok(nearbyStops);
+    if (nearbyStops.length === 0) {
+      return [];
+    }
+
+    const nearbyStopIds = nearbyStops.map((stop) => stop.id);
+
+    const routesData = await db
+      .from("routes")
+      .join("route_stops", "routes.id", "route_stops.route_id")
+      .join("schedules", "route_stops.id", "schedules.route_stop_id")
+      .whereIn("route_stops.stop_id", nearbyStopIds)
+      .select(
+        "route_stops.stop_id",
+        "routes.id",
+        "routes.name",
+        "routes.operator",
+        "routes.type",
+      )
+      .select(
+        db.raw("ARRAY_AGG(DISTINCT schedules.destination) as destinations"),
+      )
+      .groupBy(
+        "route_stops.stop_id",
+        "routes.id",
+        "routes.name",
+        "routes.operator",
+        "routes.type",
+      );
+
+    const routesByStopId = new Map<number, unknown[]>();
+    for (const route of routesData as {
+      stop_id: number;
+      id: number;
+      name: string;
+      operator: string;
+      type: string;
+      destinations: string[];
+    }[]) {
+      if (!routesByStopId.has(route.stop_id)) {
+        routesByStopId.set(route.stop_id, []);
+      }
+      routesByStopId.get(route.stop_id)?.push({
+        id: route.id,
+        name: route.name,
+        operator: route.operator,
+        type: route.type,
+        destinations: route.destinations.sort(),
+      });
+    }
+
+    return nearbyStops.map((stop: Stop) => {
+      if (stop.location === null || !("coordinates" in stop.location)) {
+        throw new Error(`Invalid location data for stop with ID ${stop.id}`);
+      }
+      const routes = routesByStopId.get(stop.id) ?? [];
+
+      return {
+        id: stop.id,
+        longitude: stop.location.coordinates[0],
+        latitude: stop.location.coordinates[1],
+        coordinates: {
+          longitude: stop.location.coordinates[0],
+          latitude: stop.location.coordinates[1],
+        },
+        type: stop.type,
+        routes,
+        distance: Math.round(
+          Number(
+            (stop.$extras as { distance_in_meters: string }).distance_in_meters,
+          ),
+        ),
+      };
+    });
   }
 
   /**
