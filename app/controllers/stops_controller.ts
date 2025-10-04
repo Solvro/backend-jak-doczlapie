@@ -11,7 +11,7 @@ export default class StopsController {
    * @paramQuery longitude
    * @paramQuery latitude
    * @paramQuery radius - (Optional) in meters
-   * @responseBody 200 - [{"id": 38,"longitude": 18.303,"latitude": 50.412,"coordinates": {"longitude": 18.303,"latitude": 50.412},"type": "bus","routes": [{"id": 2,"name": "LUZ Krapkowice Strzelce Opolskie","operator": "LUZ","type": "bus","destinations": ["KRAPKOWICE","STRZELCE OPOLSKIE"]}],"distance": 4396019}]
+   * @responseBody 200 - [{"id": 38 "name":"XYZ","coordinates": {"longitude": 18.303,"latitude": 50.412},"type": "bus","routes": [{"id": 2,"name": "LUZ Krapkowice Strzelce Opolskie","operator": "LUZ","type": "bus","destinations": ["KRAPKOWICE","STRZELCE OPOLSKIE"]}],"distance": 4396019}]
    * @tag Stops
    */
   public async index({ request }: HttpContext) {
@@ -94,8 +94,7 @@ export default class StopsController {
 
       return {
         id: stop.id,
-        longitude: stop.location.coordinates[0],
-        latitude: stop.location.coordinates[1],
+        name: stop.name,
         coordinates: {
           longitude: stop.location.coordinates[0],
           latitude: stop.location.coordinates[1],
