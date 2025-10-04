@@ -157,6 +157,7 @@ export default class StopsController {
                 time: schedule.time,
                 destination: schedule.destination,
                 run: schedule.run,
+                sequence: schedule.sequence,
                 conditions: schedule.conditions.map((type) => {
                   return {
                     name: type.name,

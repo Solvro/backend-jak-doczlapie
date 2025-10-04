@@ -351,6 +351,7 @@ export default class RoutesController {
                 time: schedule.time,
                 destination: schedule.destination,
                 run: schedule.run,
+                sequence: schedule.sequence,
                 conditions: schedule.conditions.map((type) => {
                   return {
                     id: type.id,
