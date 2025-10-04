@@ -103,7 +103,7 @@
         "properties": {
           "id": {
             "type": "number",
-            "example": 209
+            "example": 629
           },
           "name": {
             "type": "string",
@@ -126,13 +126,58 @@
         },
         "description": "Condition (Model)"
       },
+      "Report": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "id": {
+            "type": "number",
+            "example": 434
+          },
+          "run": {
+            "type": "number",
+            "example": 401
+          },
+          "route_id": {
+            "type": "number",
+            "example": 834
+          },
+          "type": {
+            "$ref": "#/components/schemas/",
+            "example": null
+          },
+          "description": {
+            "type": "string",
+            "example": "Lorem ipsum dolor sit amet"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GeoJSONPoint",
+            "example": null
+          },
+          "image": {
+            "type": "string",
+            "example": "Lorem Ipsum"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2021-03-23T16:13:08.489+01:00",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2021-03-23T16:13:08.489+01:00",
+            "format": "date-time"
+          }
+        },
+        "description": "Report (Model)"
+      },
       "Route": {
         "type": "object",
         "required": [],
         "properties": {
           "id": {
             "type": "number",
-            "example": 568
+            "example": 696
           },
           "name": {
             "type": "string",
@@ -186,15 +231,15 @@
         "properties": {
           "id": {
             "type": "number",
-            "example": 275
+            "example": 502
           },
           "route_id": {
             "type": "number",
-            "example": 147
+            "example": 607
           },
           "stop_id": {
             "type": "number",
-            "example": 852
+            "example": 815
           },
           "route": {
             "$ref": "#/components/schemas/Route",
@@ -220,7 +265,7 @@
         "properties": {
           "id": {
             "type": "number",
-            "example": 398
+            "example": 10
           },
           "time": {
             "type": "string",
@@ -228,7 +273,7 @@
           },
           "sequence": {
             "type": "number",
-            "example": 676
+            "example": 462
           },
           "destination": {
             "type": "string",
@@ -243,11 +288,11 @@
           },
           "route_stop_id": {
             "type": "number",
-            "example": 771
+            "example": 928
           },
           "run": {
             "type": "number",
-            "example": 823
+            "example": 143
           },
           "route_stop": {
             "$ref": "#/components/schemas/RouteStop",
@@ -272,7 +317,7 @@
         "properties": {
           "id": {
             "type": "number",
-            "example": 715
+            "example": 193
           },
           "name": {
             "type": "string",
@@ -319,7 +364,7 @@
         "properties": {
           "id": {
             "type": "number",
-            "example": 979
+            "example": 295
           },
           "created_at": {
             "type": "string",
@@ -328,11 +373,11 @@
           },
           "route_id": {
             "type": "number",
-            "example": 164
+            "example": 269
           },
           "run": {
             "type": "number",
-            "example": 69
+            "example": 5
           },
           "location": {
             "$ref": "#/components/schemas/GeoJSONPoint",
@@ -378,7 +423,7 @@
           },
           "radius": {
             "type": "number",
-            "example": 285
+            "example": 721
           }
         },
         "example": {
@@ -386,7 +431,7 @@
           "fromLongitude": -180,
           "toLatitude": -90,
           "toLongitude": -180,
-          "radius": 285
+          "radius": 721
         },
         "description": "findRouteValidator (Validator)"
       },
@@ -409,15 +454,80 @@
           },
           "radius": {
             "type": "number",
-            "example": 405
+            "example": 194
           }
         },
         "example": {
           "latitude": -90,
           "longitude": -180,
-          "radius": 405
+          "radius": 194
         },
         "description": "nearbyRouteValidator (Validator)"
+      },
+      "createReportValidator": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "number",
+            "example": 669
+          },
+          "type": {
+            "type": "number",
+            "example": 333,
+            "choices": [
+              "delay",
+              "accident",
+              "press",
+              "failure",
+              "did_not_arrive",
+              "change",
+              "other",
+              "diffrent_stop_location",
+              "request_stop"
+            ],
+            "required": true
+          },
+          "description": {
+            "type": "string",
+            "example": "Lorem Ipsum",
+            "maxLength": 255
+          },
+          "coordinates": {
+            "type": "object",
+            "properties": {
+              "latitude": {
+                "type": "number",
+                "example": -90,
+                "minimum": -90,
+                "maximum": 90,
+                "required": true
+              },
+              "longitude": {
+                "type": "number",
+                "example": -180,
+                "minimum": -180,
+                "maximum": 180,
+                "required": true
+              }
+            },
+            "required": true
+          },
+          "image": {
+            "type": "number",
+            "example": 697
+          }
+        },
+        "example": {
+          "run": 669,
+          "type": 333,
+          "description": "Lorem Ipsum",
+          "coordinates": {
+            "latitude": -90,
+            "longitude": -180
+          },
+          "image": 697
+        },
+        "description": "createReportValidator (Validator)"
       },
       "storeTrackingValidator": {
         "type": "object",
@@ -877,51 +987,33 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": 17,
-                    "type": "bus",
-                    "name": "KRAPKOWICE | ul. Prudnicka",
-                    "routes": {
-                      "type": "object",
-                      "properties": {
-                        "0": {
-                          "type": "object",
-                          "properties": {
-                            "id": 2,
-                            "name": "LUZ Krapkowice Strzelce Opolskie",
-                            "operator": "LUZ"
-                          }
-                        }
-                      }
-                    },
-                    "coordinates": {
-                      "type": "object",
-                      "properties": {
-                        "longitude": 17.965,
-                        "latitude": 50.471
-                      }
-                    },
-                    "distance": 355
+                  "type": "array",
+                  "items": {
+                    "type": "object"
                   }
                 },
-                "example": {
-                  "id": 17,
-                  "type": "bus",
-                  "name": "KRAPKOWICE | ul. Prudnicka",
-                  "routes": [
-                    {
-                      "id": 2,
-                      "name": "LUZ Krapkowice Strzelce Opolskie",
-                      "operator": "LUZ"
-                    }
-                  ],
-                  "coordinates": {
-                    "longitude": 17.965,
-                    "latitude": 50.471
-                  },
-                  "distance": 355
-                }
+                "example": [
+                  {
+                    "id": 38,
+                    "longitude": 18.303,
+                    "latitude": 50.412,
+                    "coordinates": {
+                      "longitude": 18.303,
+                      "latitude": 50.412
+                    },
+                    "type": "bus",
+                    "routes": [
+                      {
+                        "id": 2,
+                        "name": "LUZ Krapkowice Strzelce Opolskie",
+                        "operator": "LUZ",
+                        "type": "bus",
+                        "destinations": ["KRAPKOWICE", "STRZELCE OPOLSKIE"]
+                      }
+                    ],
+                    "distance": 4396019
+                  }
+                ]
               }
             },
             "description": "Returns **200** (OK) as **application/json**"
@@ -985,10 +1077,10 @@
                   "$ref": "#/components/schemas/Track"
                 },
                 "example": {
-                  "id": 979,
+                  "id": 295,
                   "created_at": "2021-03-23T16:13:08.489+01:00",
-                  "route_id": 164,
-                  "run": 69
+                  "route_id": 269,
+                  "run": 5
                 }
               }
             },
@@ -1008,6 +1100,107 @@
                   "longitude": -180
                 },
                 "run": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/routes/{id}/reports": {
+      "get": {
+        "summary": "Reports - Get all reports for a specific route (index)",
+        "description": "Returns **200** (OK) as **application/json**\n\n _app/controllers/reports_controller.ts_ - **index**",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "description": "The ID of the route to track @example(1)",
+            "schema": {
+              "example": null,
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "tags": ["REPORTS"],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                },
+                "example": {
+                  "id": 434,
+                  "run": 401,
+                  "route_id": 834,
+                  "type": null,
+                  "description": "Lorem ipsum dolor sit amet",
+                  "image": "Lorem Ipsum",
+                  "created_at": "2021-03-23T16:13:08.489+01:00",
+                  "updated_at": "2021-03-23T16:13:08.489+01:00"
+                }
+              }
+            },
+            "description": "Returns **200** (OK) as **application/json**"
+          }
+        },
+        "security": []
+      },
+      "post": {
+        "summary": "Reports - Submit a report for a specific route. (store)",
+        "description": "Types: 'delay','accident','press','failure','did_not_arrive','change','other','diffrent_stop_location','request_stop'\n\n _app/controllers/reports_controller.ts_ - **store**",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "description": "The ID of the route to track @example(1)",
+            "schema": {
+              "example": null,
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "tags": ["REPORTS"],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                },
+                "example": {
+                  "id": 434,
+                  "run": 401,
+                  "route_id": 834,
+                  "type": null,
+                  "description": "Lorem ipsum dolor sit amet",
+                  "image": "Lorem Ipsum",
+                  "created_at": "2021-03-23T16:13:08.489+01:00",
+                  "updated_at": "2021-03-23T16:13:08.489+01:00"
+                }
+              }
+            },
+            "description": "Returns **200** (OK) as **application/json**"
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/createReportValidator"
+              },
+              "example": {
+                "run": 669,
+                "type": 333,
+                "description": "Lorem Ipsum",
+                "coordinates": {
+                  "latitude": -90,
+                  "longitude": -180
+                },
+                "image": 697
               }
             }
           }
@@ -1052,6 +1245,14 @@
     {
       "name": "TRACKS",
       "description": "Everything related to TRACKS"
+    },
+    {
+      "name": "REPORTS",
+      "description": "Everything related to REPORTS"
+    },
+    {
+      "name": "REPORTS",
+      "description": "Everything related to REPORTS"
     }
   ]
 }
