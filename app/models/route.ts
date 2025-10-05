@@ -13,9 +13,11 @@ import type {
   ManyToMany,
 } from "@adonisjs/lucid/types/relations";
 
+import Report from "./report.js";
 import RouteStop from "./route_stop.js";
 import Schedule from "./schedule.js";
 import Stop from "./stop.js";
+import Track from "./track.js";
 
 export default class Route extends BaseModel {
   @column({ isPrimary: true })
@@ -29,6 +31,12 @@ export default class Route extends BaseModel {
 
   @column()
   declare type: "bus" | "train" | "tram";
+
+  @hasMany(() => Track)
+  declare tracks: HasMany<typeof Track>;
+
+  @hasMany(() => Report)
+  declare reports: HasMany<typeof Report>;
 
   @manyToMany(() => Stop, {
     pivotTable: "route_stops",

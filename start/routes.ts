@@ -4,6 +4,8 @@ import router from "@adonisjs/core/services/router";
 
 import swagger from "#config/swagger";
 
+const OperatorsController = () => import("#controllers/operators_controller");
+
 const ReportsController = () => import("#controllers/reports_controller");
 
 const TracksController = () => import("#controllers/tracks_controller");
@@ -24,6 +26,9 @@ router
     router.resource("routes", RoutesController).only(["show", "index"]);
     router.resource("stops", StopsController).only(["index", "show"]);
     router.resource("routes/:id/tracks", TracksController).only(["store"]);
+    router.get("/operators", [OperatorsController, "index"]);
+    router.get("/operators/:name", [OperatorsController, "show"]);
+
     router
       .resource("routes/:id/reports", ReportsController)
       .only(["store", "index"]);
