@@ -27,7 +27,8 @@ router
       .resource("routes", RoutesController)
       .only(["show", "index", "store"]);
     router.resource("stops", StopsController).only(["index", "show"]);
-    router.resource("routes/:id/tracks", TracksController).only(["store","destroy"]);
+    router.resource("routes/:id/tracks", TracksController).only(["store"]);
+    router.delete('reports/:id',[ReportsController,'destroy'])
     router.get("/operators", [OperatorsController, "index"]);
     router.get("/operators/:name", [OperatorsController, "show"]);
 
