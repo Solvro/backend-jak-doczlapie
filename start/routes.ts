@@ -23,7 +23,9 @@ router.get("/docs", async () => {
 
 router
   .group(() => {
-    router.resource("routes", RoutesController).only(["show", "index"]);
+    router
+      .resource("routes", RoutesController)
+      .only(["show", "index", "store"]);
     router.resource("stops", StopsController).only(["index", "show"]);
     router.resource("routes/:id/tracks", TracksController).only(["store"]);
     router.get("/operators", [OperatorsController, "index"]);

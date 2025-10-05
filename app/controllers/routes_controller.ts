@@ -10,10 +10,14 @@ import { DateTime } from "luxon";
 import type { HttpContext } from "@adonisjs/core/http";
 import db from "@adonisjs/lucid/services/db";
 
+import Condition from "#models/condition";
 import Report from "#models/report";
 import Route from "#models/route";
+import RouteStop from "#models/route_stop";
 import Schedule from "#models/schedule";
 import Stop from "#models/stop";
+import { GeocodingService } from "#services/geocoding_service";
+import { createRouteValidator } from "#validators/create_route";
 import { findRouteValidator } from "#validators/find_route";
 
 const WALKING_SPEED_MPS = 1.4; // Prędkość chodu w metrach na sekundę (~5 km/h)
@@ -48,7 +52,7 @@ export default class RoutesController {
    * @paramQuery transferRadius - (Optional) Search radius in meters to find nearby transfer stops. Defaults to 200.
    * @paramQuery maxTransfers - (Optional) Maximum number of transfers to consider. Defaults to 2.
    * @responseBody 200 - A list of possible journeys, sorted by the best departure time and total travel time.
-   * @responseBodyExample 200 - [{"departure":{"name":"GOGOLIN","id":44,"coordinates":{"longitude":18.025,"latitude":50.49},"time":"03:43:00","distance":3888},"arrival":{"name":"OPOLE GŁÓWNE","id":49,"coordinates":{"longitude":17.925,"latitude":50.662},"time":"04:50:00","distance":0},"travel_time":67,"transfers":0,"routes":[{"id":3,"delay": 12 ,name":"POLREGIO Kędzierzyn-Koźle - Opole Główne","operator":"POLREGIO","type":"train","run":53,"current_location":{"coordinates":[18.115,50.459],"timestamp":"2025-10-04T23:15:58.748Z"},"delay":5,"departure":{"name":"GOGOLIN","id":44,"coordinates":{"longitude":18.025,"latitude":50.49},"time":"04:30:00"},"arrival":{"name":"OPOLE GŁÓWNE","id":49,"coordinates":{"longitude":17.925,"latitude":50.662},"time":"04:50:00"},"travel_time":20,"destination":"OPOLE GŁÓWNE","reports":[{"id":2,"run":53,"type":"other","description":"Zgłoszenie od użytkownika.","created_at":"2025-10-04T22:45:17.559+00:00","coordinates":{"longitude":19.025,"latitude":50.49}}]}]}]
+   * @responseBodyExample 200 - [{"departure":{"name":"GOGOLIN","id":44,"coordinates":{"longitude":18.025,"latitude":50.49},"time":"03:43:00","distance":3888},"arrival":{"name":"OPOLE GŁÓWNE","id":49,"coordinates":{"longitude":17.925,"latitude":50.662},"time":"04:50:00","distance":0},"travel_time":67,"transfers":0,"routes":[{"id":3,"name":"POLREGIO Kędzierzyn-Koźle - Opole Główne","operator":"POLREGIO","type":"train","run":53,"current_location":{"coordinates":[18.115,50.459],"timestamp":"2025-10-04T23:15:58.748Z"},"delay":5,"stops":[{"id":44,"name":"GOGOLIN","coordinates":{"longitude":18.025,"latitude":50.49},"time":"04:30:00","sequence":1},{"id":49,"name":"OPOLE GŁÓWNE","coordinates":{"longitude":17.925,"latitude":50.662},"time":"04:50:00","sequence":5}],"travel_time":20,"destination":"OPOLE GŁÓWNE","reports":[{"id":2,"run":53,"type":"other","description":"Zgłoszenie od użytkownika.","created_at":"2025-10-04T22:45:17.559+00:00","coordinates":{"longitude":19.025,"latitude":50.49}}]}]}]
    * @tag Routes
    */
   public async index({ request, response }: HttpContext) {
@@ -343,10 +347,6 @@ export default class RoutesController {
           const legArrivalTime = DateTime.fromISO(leg.arrival_time, {
             zone: "Europe/Warsaw",
           });
-          const legDepartureCoords = JSON.parse(
-            leg.departure_coords,
-          ).coordinates;
-          const legArrivalCoords = JSON.parse(leg.arrival_coords).coordinates;
           const runKey = `${leg.route_id}:${leg.run}`;
           const nullRunKey = `${leg.route_id}:null`;
           const runReports = reportsMap.get(runKey) ?? [];
@@ -435,6 +435,29 @@ export default class RoutesController {
             }
           }
 
+          // --- MODIFICATION START ---
+          // Get the full schedule for this run from the pre-built map
+          const fullScheduleForRun = runSchedulesMap.get(leg.run) ?? [];
+
+          // Filter the schedule to get only the stops within this leg's sequence range
+          const legStops = fullScheduleForRun
+            .filter(
+              (stop: any) =>
+                stop.sequence >= leg.departure_sequence &&
+                stop.sequence <= leg.arrival_sequence,
+            )
+            .map((stop: any) => ({
+              id: stop.stop_id,
+              name: stop.stop_name,
+              coordinates: {
+                longitude: stop.location[0],
+                latitude: stop.location[1],
+              },
+              time: stop.time,
+              sequence: stop.sequence,
+            }));
+          // --- MODIFICATION END ---
+
           return {
             id: leg.route_id,
             name: leg.route_name,
@@ -443,24 +466,7 @@ export default class RoutesController {
             run: leg.run,
             current_location: currentLocation,
             delay,
-            departure: {
-              name: leg.departure_stop_name,
-              id: leg.departure_stop_id,
-              coordinates: {
-                longitude: legDepartureCoords[0],
-                latitude: legDepartureCoords[1],
-              },
-              time: leg.departure_time,
-            },
-            arrival: {
-              name: leg.arrival_stop_name,
-              id: leg.arrival_stop_id,
-              coordinates: {
-                longitude: legArrivalCoords[0],
-                latitude: legArrivalCoords[1],
-              },
-              time: leg.arrival_time,
-            },
+            stops: legStops, // Replace departure/arrival with the stops array
             travel_time: Math.round(
               legArrivalTime.diff(legDepartureTime, "minutes").minutes,
             ),
@@ -570,5 +576,125 @@ export default class RoutesController {
         };
       }),
     };
+  }
+
+  /**
+   * @store
+   * @summary Create or update routes, stops, and schedules
+   * @description Accepts a JSON payload containing an array of routes with a flat list of stops. Geocodes new stops and saves all data transactionally.
+   * @requestBody <JSON> - The full data payload for one or more routes.
+   * @responseBody 201 - {"message": "Routes processed successfully."}
+   * @tag Routes
+   */
+  public async store({ request, response }: HttpContext) {
+    const payload = await request.validateUsing(createRouteValidator);
+    const geocodingService = new GeocodingService();
+
+    try {
+      await this.processRoutesPayload(payload.data, geocodingService);
+      return response.created({ message: "Routes processed successfully." });
+    } catch (error) {
+      console.error("Route creation error:", error);
+      return response.badRequest({
+        message: error.message || "An error occurred while processing routes.",
+      });
+    }
+  }
+
+  private async processRoutesPayload(
+    payload: TCreateRoutePayload,
+    geocodingService: GeocodingService,
+  ) {
+    geocodingService.clearCache();
+
+    await db.transaction(async (trx) => {
+      const conditionMap = new Map<string, Condition>();
+      (await Condition.all()).forEach((c) => conditionMap.set(c.name, c));
+
+      const stopCache = new Map<string, Stop>();
+      let globalRunCounter =
+        (await Schedule.query({ client: trx }).max("run as max_run").first())
+          ?.max_run ?? 0;
+
+      for (const routeData of payload) {
+        const route = await Route.updateOrCreate(
+          { name: routeData.route },
+          { operator: routeData.operator, type: routeData.type as any },
+          { client: trx },
+        );
+
+        const groupedRuns = new Map<number, Map<string, any[]>>();
+        for (const stop of routeData.stops) {
+          if (!groupedRuns.has(stop.run)) groupedRuns.set(stop.run, new Map());
+          if (!groupedRuns.get(stop.run)!.has(stop.direction))
+            groupedRuns.get(stop.run)!.set(stop.direction, []);
+          groupedRuns.get(stop.run)!.get(stop.direction)!.push(stop);
+        }
+
+        for (const [localRunId, directions] of groupedRuns.entries()) {
+          for (const [directionName, stops] of directions.entries()) {
+            globalRunCounter++;
+            stops.sort((a, b) => a.time.localeCompare(b.time));
+
+            for (const [stopIndex, stopData] of stops.entries()) {
+              let stop = stopCache.get(stopData.name);
+              if (!stop) {
+                stop = await Stop.findBy("name", stopData.name, {
+                  client: trx,
+                });
+                if (!stop) {
+                  const coords = await geocodingService.geocode(stopData.name);
+                  if (!coords) {
+                    throw new Error(
+                      `Could not geocode stop: "${stopData.name}"`,
+                    );
+                  }
+                  const geoJSONString = JSON.stringify({
+                    type: "Point",
+                    coordinates: [coords.lon, coords.lat],
+                  });
+                  stop = await Stop.create(
+                    {
+                      name: stopData.name,
+                      location: db.raw("ST_GeomFromGeoJSON(?)", [
+                        geoJSONString,
+                      ]) as any,
+                      type: routeData.type as any,
+                    },
+                    { client: trx },
+                  );
+                }
+                stopCache.set(stopData.name, stop);
+              }
+
+              const routeStop = await RouteStop.firstOrCreate(
+                { routeId: route.id, stopId: stop.id },
+                {},
+                { client: trx },
+              );
+
+              const schedule = await Schedule.updateOrCreate(
+                { routeStopId: routeStop.id, run: globalRunCounter },
+                {
+                  time: `${stopData.time}:00`,
+                  destination: directionName,
+                  sequence: stopIndex + 1,
+                },
+                { client: trx },
+              );
+
+              const conditionIds = stopData.conditions
+                .map((name) => conditionMap.get(name)?.id)
+                .filter((id) => id);
+              if (conditionIds.length > 0) {
+                await schedule
+                  .related("conditions")
+                  .sync(conditionIds, true, trx);
+              }
+            }
+          }
+        }
+      }
+    });
   }
 }
