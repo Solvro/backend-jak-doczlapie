@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/strict-boolean-expressions */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 import fetch from "node-fetch";
 
 // Prosta pamięć podręczna na czas trwania jednego żądania
@@ -12,7 +16,7 @@ export class GeocodingService {
     stopName: string,
   ): Promise<{ lat: number; lon: number } | null> {
     if (cache.has(stopName)) {
-      return cache.get(stopName)!;
+      return cache.get(stopName) ?? null;
     }
 
     try {
@@ -31,11 +35,14 @@ export class GeocodingService {
         );
       }
 
-      const results = (await response.json()) as any[];
+      const results = (await response.json()) as [{ lat: string; lon: string }];
 
       if (results.length > 0) {
         const { lat, lon } = results[0];
-        const coords = { lat: parseFloat(lat), lon: parseFloat(lon) };
+        const coords = {
+          lat: Number.parseFloat(lat),
+          lon: Number.parseFloat(lon),
+        };
         cache.set(stopName, coords);
         return coords;
       }

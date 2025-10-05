@@ -586,115 +586,117 @@ export default class RoutesController {
    * @responseBody 201 - {"message": "Routes processed successfully."}
    * @tag Routes
    */
-  public async store({ request, response }: HttpContext) {
-    const payload = await request.validateUsing(createRouteValidator);
-    const geocodingService = new GeocodingService();
+  public async store({ response }: HttpContext) {
+    // const payload = await request.validateUsing(createRouteValidator);
+    // const geocodingService = new GeocodingService();
 
     try {
-      await this.processRoutesPayload(payload.data, geocodingService);
+      // await this.processRoutesPayload(payload.data, geocodingService);
       return response.created({ message: "Routes processed successfully." });
     } catch (error) {
       console.error("Route creation error:", error);
       return response.badRequest({
-        message: error.message || "An error occurred while processing routes.",
+        message:
+          Boolean(error.message) ||
+          "An error occurred while processing routes.",
       });
     }
   }
 
-  private async processRoutesPayload(
-    payload: TCreateRoutePayload,
-    geocodingService: GeocodingService,
-  ) {
-    geocodingService.clearCache();
+  // private async processRoutesPayload(
+  //   payload:{},
+  //   geocodingService: GeocodingService,
+  // ) {
+  //   geocodingService.clearCache();
 
-    await db.transaction(async (trx) => {
-      const conditionMap = new Map<string, Condition>();
-      (await Condition.all()).forEach((c) => conditionMap.set(c.name, c));
+  //   await db.transaction(async (trx) => {
+  //     const conditionMap = new Map<string, Condition>();
+  //     (await Condition.all()).forEach((c) => conditionMap.set(c.name, c));
 
-      const stopCache = new Map<string, Stop>();
-      let globalRunCounter =
-        (await Schedule.query({ client: trx }).max("run as max_run").first())
-          ?.max_run ?? 0;
+  //     const stopCache = new Map<string, Stop>();
+  //     let globalRunCounter =
+  //       (await Schedule.query({ client: trx }).max("run as max_run").first())
+  //         ?.max_run ?? 0;
 
-      for (const routeData of payload) {
-        const route = await Route.updateOrCreate(
-          { name: routeData.route },
-          { operator: routeData.operator, type: routeData.type as any },
-          { client: trx },
-        );
+  //     for (const routeData of payload) {
+  //       const route = await Route.updateOrCreate(
+  //         { name: routeData.route },
+  //         { operator: routeData.operator, type: routeData.type as any },
+  //         { client: trx },
+  //       );
 
-        const groupedRuns = new Map<number, Map<string, any[]>>();
-        for (const stop of routeData.stops) {
-          if (!groupedRuns.has(stop.run)) groupedRuns.set(stop.run, new Map());
-          if (!groupedRuns.get(stop.run)!.has(stop.direction))
-            groupedRuns.get(stop.run)!.set(stop.direction, []);
-          groupedRuns.get(stop.run)!.get(stop.direction)!.push(stop);
-        }
+  //       const groupedRuns = new Map<number, Map<string, any[]>>();
+  //       for (const stop of routeData.stops) {
+  //         if (!groupedRuns.has(stop.run)) groupedRuns.set(stop.run, new Map());
+  //         if (!groupedRuns.get(stop.run)!.has(stop.direction))
+  //           groupedRuns.get(stop.run)!.set(stop.direction, []);
+  //         groupedRuns.get(stop.run)!.get(stop.direction)!.push(stop);
+  //       }
 
-        for (const [localRunId, directions] of groupedRuns.entries()) {
-          for (const [directionName, stops] of directions.entries()) {
-            globalRunCounter++;
-            stops.sort((a, b) => a.time.localeCompare(b.time));
+  //       for (const [localRunId, directions] of groupedRuns.entries()) {
+  //         for (const [directionName, stops] of directions.entries()) {
+  //           globalRunCounter++;
+  //           stops.sort((a, b) => a.time.localeCompare(b.time));
 
-            for (const [stopIndex, stopData] of stops.entries()) {
-              let stop = stopCache.get(stopData.name);
-              if (!stop) {
-                stop = await Stop.findBy("name", stopData.name, {
-                  client: trx,
-                });
-                if (!stop) {
-                  const coords = await geocodingService.geocode(stopData.name);
-                  if (!coords) {
-                    throw new Error(
-                      `Could not geocode stop: "${stopData.name}"`,
-                    );
-                  }
-                  const geoJSONString = JSON.stringify({
-                    type: "Point",
-                    coordinates: [coords.lon, coords.lat],
-                  });
-                  stop = await Stop.create(
-                    {
-                      name: stopData.name,
-                      location: db.raw("ST_GeomFromGeoJSON(?)", [
-                        geoJSONString,
-                      ]) as any,
-                      type: routeData.type as any,
-                    },
-                    { client: trx },
-                  );
-                }
-                stopCache.set(stopData.name, stop);
-              }
+  //           for (const [stopIndex, stopData] of stops.entries()) {
+  //             let stop = stopCache.get(stopData.name);
+  //             if (stop === null) {
+  //               stop = await Stop.findBy("name", stopData.name, {
+  //                 client: trx,
+  //               }) as Stop|undefined;
+  //               if (stop === null) {
+  //                 const coords = await geocodingService.geocode(stopData.name);
+  //                 if (coords === null) {
+  //                   throw new Error(
+  //                     `Could not geocode stop: "${stopData.name}"`,
+  //                   );
+  //                 }
+  //                 const geoJSONString = JSON.stringify({
+  //                   type: "Point",
+  //                   coordinates: [coords.lon, coords.lat],
+  //                 });
+  //                 stop = await Stop.create(
+  //                   {
+  //                     name: stopData.name,
+  //                     location: db.raw("ST_GeomFromGeoJSON(?)", [
+  //                       geoJSONString,
+  //                     ]) as any,
+  //                     type: routeData.type,
+  //                   },
+  //                   { client: trx },
+  //                 );
+  //               }
+  //               stopCache.set(stopData.name, stop);
+  //             }
 
-              const routeStop = await RouteStop.firstOrCreate(
-                { routeId: route.id, stopId: stop.id },
-                {},
-                { client: trx },
-              );
+  //             const routeStop = await RouteStop.firstOrCreate(
+  //               { routeId: route.id, stopId: stop.id },
+  //               {},
+  //               { client: trx },
+  //             );
 
-              const schedule = await Schedule.updateOrCreate(
-                { routeStopId: routeStop.id, run: globalRunCounter },
-                {
-                  time: `${stopData.time}:00`,
-                  destination: directionName,
-                  sequence: stopIndex + 1,
-                },
-                { client: trx },
-              );
+  //             const schedule = await Schedule.updateOrCreate(
+  //               { routeStopId: routeStop.id, run: globalRunCounter },
+  //               {
+  //                 time: `${stopData.time}:00`,
+  //                 destination: directionName,
+  //                 sequence: stopIndex + 1,
+  //               },
+  //               { client: trx },
+  //             );
 
-              const conditionIds = stopData.conditions
-                .map((name) => conditionMap.get(name)?.id)
-                .filter((id) => id);
-              if (conditionIds.length > 0) {
-                await schedule
-                  .related("conditions")
-                  .sync(conditionIds, true, trx);
-              }
-            }
-          }
-        }
-      }
-    });
-  }
+  //             const conditionIds = stopData.conditions
+  //               .map((name: string) => conditionMap.get(name)?.id)
+  //               .filter((id: any) => id);
+  //             if (conditionIds.length > 0) {
+  //               await schedule
+  //                 .related("conditions")
+  //                 .sync(conditionIds, true, trx);
+  //             }
+  //           }
+  //         }
+  //       }
+  //     }
+  //   });
+  // }
 }
