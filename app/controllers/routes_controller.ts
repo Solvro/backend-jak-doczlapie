@@ -10,14 +10,14 @@ import { DateTime } from "luxon";
 import type { HttpContext } from "@adonisjs/core/http";
 import db from "@adonisjs/lucid/services/db";
 
-import Condition from "#models/condition";
+// import Condition from "#models/condition";
 import Report from "#models/report";
 import Route from "#models/route";
-import RouteStop from "#models/route_stop";
+// import RouteStop from "#models/route_stop";
 import Schedule from "#models/schedule";
 import Stop from "#models/stop";
-import { GeocodingService } from "#services/geocoding_service";
-import { createRouteValidator } from "#validators/create_route";
+// import { GeocodingService } from "#services/geocoding_service";
+// import { createRouteValidator } from "#validators/create_route";
 import { findRouteValidator } from "#validators/find_route";
 
 const WALKING_SPEED_MPS = 1.4; // Prędkość chodu w metrach na sekundę (~5 km/h)
