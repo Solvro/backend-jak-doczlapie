@@ -61,4 +61,14 @@ export default class ReportsController {
     const reports = await Report.query().where("routeId", routeId);
     return response.ok(reports);
   }
+
+  public async destroy({ request, response }: HttpContext) {
+    const trackId = Number(request.param("id")) || 0;
+
+    await Report.query().where("id", trackId).delete();
+    return response.ok({status:"ok"});
+  }
+
+
+
 }
