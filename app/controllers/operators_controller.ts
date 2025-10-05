@@ -39,7 +39,10 @@ export default class OperatorsController {
    */
   public async show({ request, response }: HttpContext) {
     const routes = await Route.query()
-      .where("operator", request.param("name", "test") as string)
+      .where(
+        "operator",
+        decodeURIComponent(request.param("name", "test") as string),
+      )
       .preload("tracks")
       .preload("reports")
       .preload("stops", (stopQuery) => {

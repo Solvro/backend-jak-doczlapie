@@ -6,8 +6,8 @@ export default class extends BaseSchema {
   async up() {
     this.schema.createTable(this.tableName, (table) => {
       table.increments("id");
-      table.string("name");
-      table.string("operator");
+      table.string("name", 1024);
+      table.string("operator", 1024);
       table.enum("type", ["bus", "train", "tram"]);
 
       table.timestamp("created_at");

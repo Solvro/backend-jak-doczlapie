@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/prefer-nullish-coalescing */
+/* eslint-disable @typescript-eslint/strict-boolean-expressions */
+/* eslint-disable @typescript-eslint/prefer-optional-chain */
+/* eslint-disable @typescript-eslint/prefer-regexp-exec */
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 /* eslint-disable @unicorn/no-await-expression-member */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -9,18 +13,48 @@ import { DateTime } from "luxon";
 
 import type { HttpContext } from "@adonisjs/core/http";
 import db from "@adonisjs/lucid/services/db";
+import { TransactionClientContract } from "@adonisjs/lucid/types/database";
 
+import Condition from "#models/condition";
 // import Condition from "#models/condition";
 import Report from "#models/report";
 import Route from "#models/route";
+import RouteStop from "#models/route_stop";
 // import RouteStop from "#models/route_stop";
 import Schedule from "#models/schedule";
 import Stop from "#models/stop";
+import { GeocodingService } from "#services/geocoding_service";
+import { createRouteValidator } from "#validators/create_route";
 // import { GeocodingService } from "#services/geocoding_service";
 // import { createRouteValidator } from "#validators/create_route";
 import { findRouteValidator } from "#validators/find_route";
 
 const WALKING_SPEED_MPS = 1.4; // Prędkość chodu w metrach na sekundę (~5 km/h)
+async function generateUniqueConditionName(
+  trx: TransactionClientContract,
+  length = 6,
+): Promise<string> {
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let uniqueCode = "";
+  let isUnique = false;
+
+  // This loop protects against the extremely rare case of a random code collision.
+  while (!isUnique) {
+    uniqueCode = "";
+    for (let i = 0; i < length; i++) {
+      uniqueCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    // Check if this generated code already exists as a 'name' within the transaction context.
+    const existing = await Condition.query({ client: trx })
+      .where("name", uniqueCode)
+      .first();
+    if (existing === null) {
+      isUnique = true;
+    }
+  }
+  return uniqueCode;
+}
 
 // Funkcja pomocnicza do obliczania odległości Haversine
 function haversineDistance(
@@ -37,6 +71,24 @@ function haversineDistance(
     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+/**
+ * Parses a raw stop name into its constituent parts: the city (from brackets)
+ * and the specific details.
+ *
+ * @param rawName The raw stop name string.
+ * @returns An object containing the parsed city and details.
+ */
+function parseStopName(rawName: string): {
+  city: string | null;
+  details: string;
+} {
+  const match = rawName.match(/^\[(.*?)\]\s*(.*)$/);
+  if (match && match[1] && match[2]) {
+    return { city: match[1].trim(), details: match[2].trim() };
+  }
+  return { city: null, details: rawName.trim() };
 }
 
 export default class RoutesController {
@@ -60,8 +112,8 @@ export default class RoutesController {
     const radius = request.input("radius", 1000) as number;
     const maxTransfers = request.input("maxTransfers", 2) as number;
     const minTransferMinutes = 3;
-    const maxTransferMinutes = 1200;
-    const transferRadius = request.input("transferRadius", 200) as number;
+    const maxTransferMinutes = 600;
+    const transferRadius = request.input("transferRadius", 500) as number;
     const startTime = DateTime.now()
       .setZone("Europe/Warsaw")
       .toFormat("HH:mm:ss");
@@ -586,117 +638,172 @@ export default class RoutesController {
    * @responseBody 201 - {"message": "Routes processed successfully."}
    * @tag Routes
    */
-  public async store({ response }: HttpContext) {
-    // const payload = await request.validateUsing(createRouteValidator);
-    // const geocodingService = new GeocodingService();
+  public async store({ request, response }: HttpContext) {
+    // Assuming `payload.data` holds the array of routes
+    const payload = await request.validateUsing(createRouteValidator);
+    const geocodingService = new GeocodingService();
 
     try {
-      // await this.processRoutesPayload(payload.data, geocodingService);
+      await RoutesController.processRoutesPayload(
+        payload.data,
+        geocodingService,
+      );
       return response.created({ message: "Routes processed successfully." });
     } catch (error) {
-      console.error("Route creation error:", error);
+      console.error("Route creation process failed:", error);
       return response.badRequest({
-        message:
-          Boolean(error.message) ||
-          "An error occurred while processing routes.",
+        message: error.message || "An error occurred while processing routes.",
       });
     }
   }
 
-  // private async processRoutesPayload(
-  //   payload:{},
-  //   geocodingService: GeocodingService,
-  // ) {
-  //   geocodingService.clearCache();
+  public static async processRoutesPayload(
+    payload: any[], // TODO: Replace 'any[]' with a validated type from a validator
+    geocodingService: GeocodingService,
+  ) {
+    // Clear the geocoding cache at the start of each new import process.
+    geocodingService.clearCache();
 
-  //   await db.transaction(async (trx) => {
-  //     const conditionMap = new Map<string, Condition>();
-  //     (await Condition.all()).forEach((c) => conditionMap.set(c.name, c));
+    // Use a transaction to ensure that the entire import succeeds or fails as a single unit.
+    await db.transaction(async (trx) => {
+      // In-memory cache to avoid redundant DB queries for the same stop within this payload.
+      const stopCache = new Map<string, Stop>();
 
-  //     const stopCache = new Map<string, Stop>();
-  //     let globalRunCounter =
-  //       (await Schedule.query({ client: trx }).max("run as max_run").first())
-  //         ?.max_run ?? 0;
+      // Determine the next run number to ensure new runs are unique.
+      let globalRunCounter =
+        (await Schedule.query({ client: trx }).max("run as max_run").first())
+          ?.max_run ?? 0;
 
-  //     for (const routeData of payload) {
-  //       const route = await Route.updateOrCreate(
-  //         { name: routeData.route },
-  //         { operator: routeData.operator, type: routeData.type as any },
-  //         { client: trx },
-  //       );
+      for (const routeData of payload) {
+        // Find or create the main Route record.
+        const route = await Route.updateOrCreate(
+          { name: routeData.route },
+          { operator: routeData.operator, type: routeData.type as any },
+          { client: trx },
+        );
 
-  //       const groupedRuns = new Map<number, Map<string, any[]>>();
-  //       for (const stop of routeData.stops) {
-  //         if (!groupedRuns.has(stop.run)) groupedRuns.set(stop.run, new Map());
-  //         if (!groupedRuns.get(stop.run)!.has(stop.direction))
-  //           groupedRuns.get(stop.run)!.set(stop.direction, []);
-  //         groupedRuns.get(stop.run)!.get(stop.direction)!.push(stop);
-  //       }
+        // Group stops by run number and then by direction for logical processing.
+        const groupedRuns = new Map<number, Map<string, any[]>>();
+        for (const stop of routeData.stops) {
+          if (!groupedRuns.has(stop.run)) groupedRuns.set(stop.run, new Map());
+          if (!groupedRuns.get(stop.run)!.has(stop.direction))
+            groupedRuns.get(stop.run)!.set(stop.direction, []);
+          groupedRuns.get(stop.run)!.get(stop.direction)!.push(stop);
+        }
 
-  //       for (const [localRunId, directions] of groupedRuns.entries()) {
-  //         for (const [directionName, stops] of directions.entries()) {
-  //           globalRunCounter++;
-  //           stops.sort((a, b) => a.time.localeCompare(b.time));
+        // Process each unique run (a single trip in one direction).
+        for (const [, directions] of groupedRuns.entries()) {
+          for (const [directionName, stops] of directions.entries()) {
+            globalRunCounter++; // Increment run counter for each unique journey.
+            stops.sort((a, b) => a.time.localeCompare(b.time)); // Sort stops by time to get the correct sequence.
 
-  //           for (const [stopIndex, stopData] of stops.entries()) {
-  //             let stop = stopCache.get(stopData.name);
-  //             if (stop === null) {
-  //               stop = await Stop.findBy("name", stopData.name, {
-  //                 client: trx,
-  //               }) as Stop|undefined;
-  //               if (stop === null) {
-  //                 const coords = await geocodingService.geocode(stopData.name);
-  //                 if (coords === null) {
-  //                   throw new Error(
-  //                     `Could not geocode stop: "${stopData.name}"`,
-  //                   );
-  //                 }
-  //                 const geoJSONString = JSON.stringify({
-  //                   type: "Point",
-  //                   coordinates: [coords.lon, coords.lat],
-  //                 });
-  //                 stop = await Stop.create(
-  //                   {
-  //                     name: stopData.name,
-  //                     location: db.raw("ST_GeomFromGeoJSON(?)", [
-  //                       geoJSONString,
-  //                     ]) as any,
-  //                     type: routeData.type,
-  //                   },
-  //                   { client: trx },
-  //                 );
-  //               }
-  //               stopCache.set(stopData.name, stop);
-  //             }
+            for (const [stopIndex, stopData] of stops.entries()) {
+              // --- Step 1: Find or Create the Stop ---
+              let stop = stopCache.get(stopData.name);
+              if (!stop) {
+                stop = await Stop.findBy("name", stopData.name, {
+                  client: trx,
+                });
+              }
 
-  //             const routeStop = await RouteStop.firstOrCreate(
-  //               { routeId: route.id, stopId: stop.id },
-  //               {},
-  //               { client: trx },
-  //             );
+              if (!stop) {
+                // If stop doesn't exist, geocode and create it.
+                const { city, details } = parseStopName(stopData.name);
+                let coords: { lat: number; lon: number } | null = null;
 
-  //             const schedule = await Schedule.updateOrCreate(
-  //               { routeStopId: routeStop.id, run: globalRunCounter },
-  //               {
-  //                 time: `${stopData.time}:00`,
-  //                 destination: directionName,
-  //                 sequence: stopIndex + 1,
-  //               },
-  //               { client: trx },
-  //             );
+                if (details) coords = await geocodingService.geocode(details);
+                if (!coords && city) {
+                  console.warn(
+                    `Geocoding failed for "${details}". Retrying with city "${city}".`,
+                  );
+                  coords = await geocodingService.geocode(city);
+                }
 
-  //             const conditionIds = stopData.conditions
-  //               .map((name: string) => conditionMap.get(name)?.id)
-  //               .filter((id: any) => id);
-  //             if (conditionIds.length > 0) {
-  //               await schedule
-  //                 .related("conditions")
-  //                 .sync(conditionIds, true, trx);
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-  //   });
-  // }
+                if (!coords) {
+                  console.error(
+                    `All geocoding attempts failed for stop: "${stopData.name}". SKIPPING.`,
+                  );
+                  continue; // Skip this stop and proceed to the next one.
+                }
+
+                const geoJSONString = JSON.stringify({
+                  type: "Point",
+                  coordinates: [coords.lon, coords.lat],
+                });
+
+                stop = await Stop.create(
+                  {
+                    name: stopData.name,
+                    location: db.raw("ST_GeomFromGeoJSON(?)", [geoJSONString]),
+                    type: routeData.type,
+                  },
+                  { client: trx },
+                );
+              }
+
+              // Cache the found/created stop to speed up subsequent lookups.
+              stopCache.set(stopData.name, stop);
+
+              // --- Step 2: Create the Route-Stop Association ---
+              const routeStop = await RouteStop.firstOrCreate(
+                { routeId: route.id, stopId: stop.id },
+                {},
+                { client: trx },
+              );
+
+              // --- Step 3: Create the Schedule Entry ---
+              const schedule = await Schedule.updateOrCreate(
+                { routeStopId: routeStop.id, run: globalRunCounter },
+                {
+                  time: `${stopData.time}:00`,
+                  destination: directionName,
+                  sequence: stopIndex + 1,
+                },
+                { client: trx },
+              );
+
+              // --- Step 4: Find or Create and Link Conditions ---
+              if (
+                stopData.conditions &&
+                Array.isArray(stopData.conditions) &&
+                stopData.conditions.length > 0
+              ) {
+                const conditionModels = await Promise.all(
+                  stopData.conditions.map(
+                    async (conditionDescription: string) => {
+                      const trimmedDescription = conditionDescription.trim();
+                      let condition = await Condition.query({ client: trx })
+                        .where("description", trimmedDescription)
+                        .first();
+
+                      if (!condition) {
+                        const newName = await generateUniqueConditionName(trx);
+                        condition = await Condition.create(
+                          {
+                            description: trimmedDescription,
+                            name: newName,
+                          },
+                          { client: trx },
+                        );
+                      }
+                      return condition;
+                    },
+                  ),
+                );
+
+                const conditionIds = conditionModels
+                  .map((c) => c.id)
+                  .filter(Boolean);
+                if (conditionIds.length > 0) {
+                  await schedule
+                    .related("conditions")
+                    .sync(conditionIds, true, trx);
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+  }
 }

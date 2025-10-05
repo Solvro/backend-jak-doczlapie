@@ -8,7 +8,7 @@ export default class extends BaseSchema {
 
     this.schema.createTable(this.tableName, (table) => {
       table.increments("id");
-      table.string("name");
+      table.string("name", 1024);
       table.specificType("location", "geography(Point, 4326)");
       table.enum("type", ["bus", "train", "tram"]);
 
